@@ -5,6 +5,7 @@ import org.springframework.data.elasticsearch.repository.ElasticsearchRepository
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 //Es搜索仓库
 @Repository
 public interface DocumentSearchRepository extends ElasticsearchRepository<DocumentSearchEntity, Long> {
@@ -16,4 +17,7 @@ public interface DocumentSearchRepository extends ElasticsearchRepository<Docume
     List<DocumentSearchEntity> findByTitleContainingAndLanguage(String titleKeyword, String language);
     //根据内容或语言进行搜索
     List<DocumentSearchEntity> findByContentContainingAndLanguage(String contentKeyword, String language);
+    //根据UniqueId删除文档
+    Optional<DocumentSearchEntity> findByUniqueId(String uniqueId);
+    void deleteByUniqueId(String uniqueId);
 }

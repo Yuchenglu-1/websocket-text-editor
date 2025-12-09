@@ -19,6 +19,8 @@ public class DocumentSearchEntity {
     private String title;
     @Field(type = FieldType.Keyword)
     private String language;
+    @Field(type = FieldType.Keyword)
+    private String uniqueId;
     @Field(type = FieldType.Date)
     private Date createAt;
     @Field(type = FieldType.Date)
@@ -47,6 +49,12 @@ public class DocumentSearchEntity {
     }
     public void setLanguage(String language) {
         this.language = language;
+    }
+    public String getUniqueId() {
+        return uniqueId;
+    }
+    public void setUniqueId(String uuid) {
+        this.uniqueId = uuid;
     }
     public Date getCreateAt() {
         return createAt;

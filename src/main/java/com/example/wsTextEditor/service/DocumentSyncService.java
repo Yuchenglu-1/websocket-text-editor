@@ -42,8 +42,9 @@ public class DocumentSyncService {
     /**
      * 从 Elasticsearch 中删除文档
      */
-    public void deleteDocumentFromIndex(Long documentId) {
-        searchableDocumentRepository.deleteById(documentId);
+    public void deleteDocumentFromIndex(String documentId) {
+        searchableDocumentRepository.findByUniqueId(documentId).ifPresent(
+            searchableDocumentRepository::delete);
     }
 
     /**
@@ -55,6 +56,7 @@ public class DocumentSyncService {
         entity.setTitle(document.getTitle());
         entity.setContent(document.getContent());
         entity.setLanguage(document.getLanguage());
+        entity.setUniqueId(document.getUniqueId());
         entity.setCreateAt(document.getCreatedAt());
         entity.setUpdateAt(document.getUpdatedAt());
         return entity;
