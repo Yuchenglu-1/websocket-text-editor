@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  # 后端Spring Boot应用服务
+  backend:
+    build: .
+    container_name: java_backend
+    ports:
+      - "9090:9090"
+    environment:
+      # Y-websocket服务地址
+      - Y_WEBSOCKET_URL=ws://ywebsocket:1234
+      # 数据库配置
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      # RabbitMQ配置
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_RABBITMQ_PORT=5672
+      - SPRING_RABBITMQ_USERNAME=${RABBITMQ_DEFAULT_USER}
+      - SPRING_RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ywebsocket:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - app-network
+    volumes:
+      # 挂载上传目录以持久化用户头像
+      - ./uploads:/app/uploads
+
+  # Y-websocket协作编辑服务
+  ywebsocket:
+    build:
+      context: ./y-websocket
+    container_name: y_websocket
+    environment:
+      - HOST=0.0.0.0
+      - PORT=1234
+    ports:
+      - "1234:1234"
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # PostgreSQL数据库服务
+  postgres:
+    image: postgres:15
+    container_name: postgres_db
+    environment:
+      # 从.env文件读取数据库配置
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # 持久化数据库数据
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+  # RabbitMQ消息队列服务
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq_server
+    ports:
+      # AMQP协议端口
+      - "5672:5672"
+      # 管理界面端口
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER:-admin}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS:-admin123}
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    volumes:
+      # 持久化RabbitMQ数据
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - app-network
+
+# 数据卷定义
+volumes:
+  postgres_data:
+  rabbitmq_data:
+
+# 网络定义
+networks:
+  app-network:
+    driver: bridge

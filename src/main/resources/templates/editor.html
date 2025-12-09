@@ -1,0 +1,1327 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Code Share Editor</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- CSRF令牌元数据，用于防止跨站请求伪造攻击 -->
+    <meta name="_csrf" th:if="${_csrf}" th:content="${_csrf.token}"/>
+    <meta name="_csrf_header" th:if="${_csrf}" th:content="${_csrf.headerName}"/>
+    
+    <!-- Monaco编辑器样式 -->
+    <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdn.jsdelivr.net/npm/monaco-editor@latest/min/vs/editor/editor.main.css">
+    <!-- 全局样式表 -->
+    <link rel="stylesheet" th:href="@{/style.css}">
+    <!-- 编辑器页面专用样式表 -->
+    <link rel="stylesheet" th:href="@{/css/editor.css}">
+    
+    <!-- 添加SockJS和STOMP库，用于WebSocket通信 -->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2/lib/stomp.min.js"></script>
+    <!-- 添加 WebSocket 管理器 -->
+    <script src="/js/websocket-manager.js"></script>
+    
+    <script th:inline="javascript">
+        /*<![CDATA[*/
+        // 从URL路径中提取文档ID的辅助函数
+        function getDocIdFromUrl() {
+            const pathParts = window.location.pathname.split('/');
+            if (pathParts.length >= 3 && pathParts[1] === 'editor') {
+                return pathParts[2];
+            }
+            return null;
+        }
+        
+        // 调试函数，用于检查Thymeleaf传递的变量
+        function debugThymeleafVariables() {
+            console.log('Debugging Thymeleaf variables:');
+            console.log('ywsUrl:', /*[[${ywsUrl}]]*/ 'not set');
+            console.log('document.uniqueId:', /*[[${document.uniqueId}]]*/ 'not set');
+            console.log('document.content:', /*[[${document.content}]]*/ 'not set');
+            console.log('document.title:', /*[[${document.title}]]*/ 'not set');
+            console.log('document.language:', /*[[${document.language}]]*/ 'not set');
+            console.log('canEdit:', /*[[${canEdit}]]*/ false);
+            console.log('currentUser.username:', /*[[${currentUser.username}]]*/ 'not set');
+        }
+        
+        // 页面加载时调用调试函数
+        debugThymeleafVariables();
+        /*]]>*/
+    </script>
+</head>
+<body>
+    <!-- 添加数据属性来传递用户名 -->
+    <div id="user-context" 
+         th:data-username="${currentUser.username}" 
+         th:data-user-id="${currentUser.id}" 
+         style="display: none;"></div>
+    
+    <!-- 编辑器页面头部导航栏 -->
+    <div class="editor-header">
+        <div class="container-fluid">
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center">
+                    <!-- 返回仪表板链接 -->
+                    <a href="/" class="btn btn-sm btn-outline-secondary me-2">← Dashboard</a>
+                    <!-- 文档标题显示 -->
+                    <h1 class="h5 mb-0">📝 <span th:text="${document.title ?: 'Untitled Document'}">Document Title</span></h1>
+                </div>
+                
+                <!-- 添加用户信息显示 -->
+                <div class="user-info" style="position: absolute; top: 0; right: 0; background: #2196F3; color: white; padding: 5px; font-size: 12px; z-index: 1000;">
+                    <span>User:<span th:text="${currentUser.username ?: 'NULL'}">NULL</span></span>
+                </div>
+                
+                <div class="d-flex align-items-center">
+                    <!-- 语言选择器 -->
+                    <select class="form-select form-select-sm me-2" id="language-selector">
+                        <option value="javascript" th:selected="${document.language == 'javascript'}">JavaScript</option>
+                        <option value="typescript" th:selected="${document.language == 'typescript'}">TypeScript</option>
+                        <option value="html" th:selected="${document.language == 'html'}">HTML</option>
+                        <option value="css" th:selected="${document.language == 'css'}">CSS</option>
+                        <option value="java" th:selected="${document.language == 'java'}">Java</option>
+                        <option value="python" th:selected="${document.language == 'python'}">Python</option>
+                        <option value="cpp" th:selected="${document.language == 'cpp'}">C++</option>
+                        <option value="csharp" th:selected="${document.language == 'csharp'}">C#</option>
+                        <option value="php" th:selected="${document.language == 'php'}">PHP</option>
+                        <option value="sql" th:selected="${document.language == 'sql'}">SQL</option>
+                        <option value="plaintext" th:selected="${document.language == 'plaintext'}">Plaintext</option>
+                        <option value="json" th:selected="${document.language == 'json'}">JSON</option>
+                        <option value="xml" th:selected="${document.language == 'xml'}">XML</option>
+                    </select>
+                    
+                    <!-- 评论和任务按钮 -->
+                    <button id="tasks-btn" class="btn btn-sm btn-success me-2">
+                        <i class="fas fa-comments me-1"></i>comments/tasks
+                        </a>
+                    </button>
+                    
+                    <!-- 在线用户按钮 -->
+                    <button id="online-users-btn" class="btn btn-sm btn-success me-2">
+                        <i class="fas fa-users me-1"></i>online-users
+                    </button>
+                    
+                    <!-- 协作功能按钮，仅文档所有者可见 -->
+                    <button id="collaboration-btn" class="btn btn-sm btn-info me-2" th:if="${userPermission.name() == 'OWNER'}">
+                        👥 Collaborate
+                    </button>
+                    
+                    <!-- 保存按钮 -->
+                    <button id="save-btn" class="btn btn-sm btn-success me-2">
+                        💾 Save
+                    </button>
+                    
+                    <!-- 通知按钮 -->
+                    <div class="notification-container">
+                        <button id="notification-btn" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-bell"></i> 🔔
+                        </button>
+                        <!-- 通知徽章，显示未读通知数量 -->
+                        <span id="notification-badge" class="notification-badge" style="display: none;">0</span>
+                    </div>
+                    
+                    <!-- 连接状态指示器 -->
+                    <div class="connection-status-container">
+                        <span class="connection-label">Connection:</span>
+                        <span class="connection-indicator disconnected">
+                            <span class="status-dot"></span>
+                            <span class="connection-status">disconnected</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 通知面板 -->
+    <div id="notification-panel" class="notification-panel">
+        <div class="notification-header">
+            <h6>通知</h6>
+            <!-- 清除所有通知按钮 -->
+            <button id="clear-notifications" class="btn btn-sm btn-outline-secondary">清除</button>
+        </div>
+        <div id="notifications-container" class="notifications-container">
+            <!-- 通知内容将通过JavaScript动态添加 -->
+        </div>
+    </div>
+
+    <!-- 协作模态框 -->
+    <div class="modal fade" id="collaborationModal" tabindex="-1" aria-labelledby="collaborationModalLabel" aria-hidden="true" style="display: none;">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="collaborationModalLabel">👥 Document Collaboration</h5>
+                    <!-- 关闭模态框按钮 -->
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">Close</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-4">
+                        <h6>Invite Users</h6>
+                        <!-- 邀请用户输入框和选择器 -->
+                        <div class="input-group mt-3">
+                            <input type="text" class="form-control" id="invite-uuid" placeholder="Enter invitation UUID...">
+                            <select class="form-select form-select-sm permission-select-uuid" id="permission-select-uuid">
+                                <option value="EDITOR">Editor</option>
+                                <option value="VIEWER">Viewer</option>
+                            </select>
+                            <button class="btn btn-primary" type="button" id="invite-by-uuid-btn">Invite</button>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h6>Document Collaborators</h6>
+                        <div id="collaborators-list">
+                            <!-- 协作者列表将通过JavaScript加载 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑器容器 -->
+    <div id="editor-container" th:class="${canEdit ? '' : 'read-only'}"></div>
+    
+    <!-- 添加数据属性来传递文档内容 -->
+    <div id="document-context" 
+         th:data-content="${document.content}" 
+         style="display: none;"></div>
+    
+    <!-- 光标覆盖层，用于显示其他用户的光标位置 -->
+    <div id="cursor-overlay"></div>
+    
+    <!-- Toast消息容器 -->
+    <div id="toast-container"></div>
+    <!-- 添加Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Monaco Editor -->
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@latest/min/vs/loader.js"></script>
+    <script type="module">
+        /*<![CDATA[*/
+        const ywsUrl = /*[[${ywsUrl}]]*/ 'ws://localhost:1234';
+        // 使用从URL获取的文档ID，如果获取不到则使用Thymeleaf提供的ID
+        const docIdFromUrl = getDocIdFromUrl();
+        const docId = docIdFromUrl || /*[[${document.uniqueId}]]*/ 'default-room';
+        // 从HTML数据属性获取当前用户名
+        const userContext = document.getElementById('user-context');
+        const currentUsername = userContext ? userContext.getAttribute('data-username') : 'Anonymous';
+        // 修复：使用HTML数据属性传递文档内容，避免Thymeleaf JavaScript内联处理问题
+        const documentContent = document.getElementById('document-context') ? document.getElementById('document-context').getAttribute('data-content') : '';
+        const canEdit = /*[[${canEdit}]]*/ true;
+        // 检查当前是否是新文档
+        let isNewDocument = docId === 'default-room';
+        
+        // 调试信息 - 检查传入的用户信息
+        console.log('Current user from Thymeleaf:', /*[[${currentUser}]]*/ 'No user data');
+        console.log('Current username:', currentUsername);
+        console.log('Document content from data attribute:', documentContent);
+        /*]]>*/
+
+        import * as Y from 'https://esm.sh/yjs@14.0.0-6';
+        import { WebsocketProvider } from 'https://esm.sh/@y/websocket@4.0.0-1?alias=yjs:https://esm.sh/yjs@14.0.0-6';
+
+        // 添加SockJS和STOMP库用于WebSocket通知
+        let notificationCount = 0;
+
+        let monacoEditor;
+        let provider;
+        let awareness;
+        let isUpdatingFromY = false;
+
+        // Initialize Monaco Editor
+        require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@latest/min/vs' } });
+        require(['vs/editor/editor.main'], function () {
+            // Configure Monaco
+            monaco.editor.defineTheme('code-share-theme', {
+                base: 'vs',
+                inherit: true,
+                rules: [],
+                colors: {
+                    'editor.background': '#ffffff',
+                    'editor.foreground': '#333333',
+                    'editorLineNumber.foreground': '#999999',
+                    'editor.selectionBackground': '#add6ff',
+                    'editor.inactiveSelectionBackground': '#e5ebf1'
+                }
+            });
+
+
+            //检测是否为移动设备
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            // 初始化语言
+            const initialLanguage = /*[[${document.language}]]*/ 'javascript';
+            
+            monacoEditor = monaco.editor.create(document.getElementById('editor-container'), {
+                value: '// Welcome to Code Share!\n// Start typing your code here...\n\n',
+                language: initialLanguage,
+                theme: 'code-share-theme',
+                fontSize: isMobile ? 16 : 14, // Larger font on mobile to prevent zoom
+                fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Source Code Pro', monospace",
+                lineNumbers: isMobile ? 'off' : 'on', // Hide line numbers on mobile for more space
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                automaticLayout: true,
+                wordWrap: 'on',
+                folding: !isMobile, // Disable folding on mobile
+                renderLineHighlight: 'all',
+                selectOnLineNumbers: !isMobile,
+                roundedSelection: false,
+                readOnly: !canEdit, // 根据用户权限设置编辑器是否只读
+                cursorStyle: 'line',
+                cursorBlinking: 'blink',
+                tabSize: 4,
+                insertSpaces: true,
+                // Mobile-specific options
+                mouseWheelZoom: false, // Disable zoom with mouse wheel
+                contextmenu: !isMobile, // Disable context menu on mobile
+                quickSuggestions: !isMobile, // Disable suggestions on mobile to prevent UI interference
+                suggestOnTriggerCharacters: !isMobile,
+                acceptSuggestionOnEnter: 'off', // Prevent accidental suggestion acceptance
+                parameterHints: { enabled: !isMobile },
+                hover: { enabled: !isMobile },
+                links: false, // Disable links on mobile
+                colorDecorators: !isMobile,
+                lightbulb: { enabled: false }, // Disable lightbulb on mobile
+                overviewRulerBorder: false,
+                hideCursorInOverviewRuler: true,
+                scrollbar: {
+                    useShadows: false,
+                    verticalHasArrows: false,
+                    horizontalHasArrows: false,
+                    vertical: isMobile ? 'hidden' : 'auto',
+                    horizontal: isMobile ? 'hidden' : 'auto'
+                }
+            });
+
+            initializeCollaboration();
+            
+            // 最终检查：确保文档内容正确加载
+            setTimeout(function() {
+                console.log('Final check for document content');
+                
+                // 检查是否需要从数据库加载内容
+                if (documentContent && documentContent.trim() !== '' && 
+                    typeof ytext !== 'undefined' && 
+                    ytext.toString().trim() === '' && 
+                    (monacoEditor.getValue().trim() === '// Welcome to Code Share!\n// Start typing your code here...\n\n' ||
+                     monacoEditor.getValue().trim() === '')) {
+                    
+                    console.log('Loading document content from database in final check:', documentContent);
+                    console.log('Document content length:', documentContent.length);
+                    console.log('Document content char codes:', documentContent.split('').map(c => c.charCodeAt(0)));
+                    
+                    // 更新Y.js内容
+                    ytext.insert(0, documentContent);
+                    
+                    // 更新编辑器内容
+                    isUpdatingFromY = true;
+                    monacoEditor.setValue(documentContent);
+                    isUpdatingFromY = false;
+                }
+                
+                console.log('Document content after final check:', monacoEditor.getValue());
+                console.log('Document content length after final check:', monacoEditor.getValue().length);
+            }, 1500);
+            
+            // 确保在编辑器初始化完成后添加事件监听器
+            function attachEventListeners() {
+                // 保存功能
+                const saveBtn = document.getElementById('save-btn');
+                if (saveBtn) {
+                    saveBtn.addEventListener('click', async function() {
+                        // 检查用户是否有编辑权限
+                        if (!canEdit) {
+                            showToast('You do not have permission to save this document.');
+                            return;
+                        }
+                        
+                        try {
+                            const content = monacoEditor.getValue();
+                            const language = document.getElementById('language-selector').value;
+                            const titleElement = document.querySelector('h1 span');
+                            const title = titleElement ? titleElement.textContent : 'Untitled Document';
+                            
+                            // 对于新文档（ID为'default-room'），不执行任何操作
+                            if (docId === 'default-room') {
+                                showToast('Please create a new document first using the "New Document" button on the dashboard.');
+                                return;
+                            }
+                            
+                            const response = await fetch(`/documents/update-title/${docId}`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRF-TOKEN': document.querySelector('meta[name="_csrf"]')?.getAttribute('content') || ''
+                                },
+                                body: JSON.stringify({ title: title }) // 使用当前标题而不是新标题
+                            });
+                            
+                            if (response.ok) {
+                                
+                                // 保存文档内容
+                                const saveResponse = await fetch('/documents/save', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/x-www-form-urlencoded',
+                                        'X-CSRF-TOKEN': document.querySelector('meta[name="_csrf"]')?.getAttribute('content') || ''
+                                    },
+                                    body: new URLSearchParams({
+                                        documentId: docId,
+                                        content: content,
+                                        language: language,
+                                        title: title // 使用当前标题而不是新标题
+                                    })
+                                });
+                                
+                                if (saveResponse.ok) {
+                                    showToast('Document saved successfully!');
+                                } else {
+                                    showToast('Failed to save document content.');
+                                }
+                            } else {
+                                showToast('Failed to update document title.');
+                            }
+                        } catch (error) {
+                            console.error('Save error:', error);
+                            showToast('An error occurred while saving the document.');
+                        }
+                    });
+                }
+                
+                // 评论和任务按钮功能
+                const tasksBtn = document.getElementById('tasks-btn');
+                if (tasksBtn) {
+                    tasksBtn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        // 跳转到任务页面并传递文档ID和用户名
+                        window.location.href = `/tasks?docId=${docId}&username=${encodeURIComponent(currentUsername)}`;
+                    });
+                }
+                
+                // 在线用户按钮功能
+                const onlineUsersBtn = document.getElementById('online-users-btn');
+                if (onlineUsersBtn) {
+                    onlineUsersBtn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        // 跳转到在线用户页面
+                        window.location.href = '/online-users';
+                    });
+                }
+                
+                // 协作功能
+                const collaborationBtn = document.getElementById('collaboration-btn');
+                if (collaborationBtn) {
+                    collaborationBtn.addEventListener('click', function() {
+                        const modal = new bootstrap.Modal(document.getElementById('collaborationModal'));
+                        modal.show();
+                        loadCollaborators();
+                    });
+                }
+                
+                // 语言选择器
+                const languageSelector = document.getElementById('language-selector');
+                if (languageSelector) {
+                    languageSelector.addEventListener('change', function() {
+                        const newLanguage = this.value;
+                        monaco.editor.setModelLanguage(monacoEditor.getModel(), newLanguage);
+                    });
+                }
+                
+                // 添加通知相关的事件监听器
+                const notificationBtn = document.getElementById('notification-btn');
+                if (notificationBtn) {
+                    notificationBtn.addEventListener('click', toggleNotificationPanel);
+                }
+                
+                const clearNotificationsBtn = document.getElementById('clear-notifications');
+                if (clearNotificationsBtn) {
+                    clearNotificationsBtn.addEventListener('click', clearNotifications);
+                }
+                
+                // 点击面板外关闭通知面板
+                document.addEventListener('click', function(e) {
+                    const notificationPanel = document.getElementById('notification-panel');
+                    const notificationBtn = document.getElementById('notification-btn');
+                    
+                    if (notificationPanel && notificationBtn && 
+                        notificationPanel.classList.contains('visible') &&
+                        !notificationPanel.contains(e.target) && 
+                        !notificationBtn.closest('.notification-container').contains(e.target)) {
+                        notificationPanel.classList.remove('visible');
+                    }
+                });
+            }
+            
+            // 在DOM加载完成后绑定事件监听器
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', attachEventListeners);
+            } else {
+                attachEventListeners();
+            }
+            
+            // 页面完全加载后再次检查文档内容同步
+            window.addEventListener('load', function() {
+                setTimeout(function() {
+                    console.log('Window loaded, checking document content sync');
+                    
+                    // 检查Y.js内容和Monaco编辑器内容是否同步
+                    if (typeof ytext !== 'undefined') {
+                        const yjsContent = ytext.toString();
+                        const editorContent = monacoEditor.getValue();
+                        
+                        console.log('Y.js content:', yjsContent);
+                        console.log('Y.js content length:', yjsContent.length);
+                        console.log('Editor content:', editorContent);
+                        console.log('Editor content length:', editorContent.length);
+                        
+                        // 只有当编辑器内容是默认内容且Y.js有内容时才同步
+                        if (yjsContent.trim() !== '' && 
+                            editorContent.trim() === '// Welcome to Code Share!\n// Start typing your code here...\n\n') {
+                            console.log('Syncing editor with Y.js content after window load');
+                            isUpdatingFromY = true;
+                            monacoEditor.setValue(yjsContent);
+                            isUpdatingFromY = false;
+                        }
+                        // 如果数据库有内容但Y.js为空，初始化Y.js
+                        else if (yjsContent.trim() === '' && documentContent && documentContent.trim() !== '') {
+                            console.log('Initializing Y.js with database content after window load:', documentContent);
+                            ytext.insert(0, documentContent);
+                        }
+                        // 如果Y.js为空，编辑器有默认内容，但数据库有内容，则用数据库内容替换
+                        else if (yjsContent.trim() === '' && 
+                                 documentContent && documentContent.trim() !== '' &&
+                                 (editorContent.trim() === '// Welcome to Code Share!\n// Start typing your code here...\n\n' ||
+                                  editorContent.trim() === '')) {
+                            console.log('Replacing default content with database content after window load:', documentContent);
+                            ytext.insert(0, documentContent);
+                            isUpdatingFromY = true;
+                            monacoEditor.setValue(documentContent);
+                            isUpdatingFromY = false;
+                        }
+                    }
+                }, 1000);
+            });
+        });
+        // 修改权限下拉菜单事件监听器
+        document.addEventListener('change', function(e) {
+            if (e.target.classList.contains('permission-select')) {
+                const userId = e.target.dataset.userId;
+                const newPermission = e.target.value;
+                updateCollaboratorPermission(userId, newPermission);
+            }
+        });
+
+        // 移除协作者按钮事件监听器
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('remove-collaborator')) {
+                const userId = e.target.dataset.userId;
+                removeCollaborator(userId);
+            }
+        });
+        // 初始化协作功能
+        function initializeCollaboration() {
+            // 重新获取initialLanguage，因为在该函数作用域内无法访问外部定义的变量
+            const initialLanguage = /*[[${document.language}]]*/ 'javascript';
+            
+            const ydoc = new Y.Doc();
+            provider = new WebsocketProvider(ywsUrl, docId, ydoc);
+            const ytext = ydoc.getText('monaco');
+            awareness = provider.awareness;
+            const localClientId = awareness.clientID || ydoc.clientID;
+
+            // 输出调试信息
+            console.log('Initializing collaboration with documentContent:', documentContent);
+            console.log('Y.js document ID:', docId);
+            console.log('Current username:', currentUsername);
+
+            // Set user awareness
+            const localUser = { 
+                name: currentUsername, 
+                color: colorFromId(localClientId),
+                language: initialLanguage
+            };
+            awareness.setLocalState({ user: localUser, cursor: null });
+
+            // Y.js to Monaco synchronization
+            ytext.observe(event => {
+                if (isUpdatingFromY) return;
+                
+                const content = ytext.toString();
+                console.log('Y.js content changed:', content);
+                console.log('Y.js content length:', content.length);
+                console.log('Y.js content char codes:', content.split('').map(c => c.charCodeAt(0)));
+                
+                // 只有当内容真正发生变化时才更新编辑器
+                if (monacoEditor.getValue() !== content) {
+                    isUpdatingFromY = true;
+                    monacoEditor.setValue(content);
+                    isUpdatingFromY = false;
+                    console.log('Monaco editor updated from Y.js');
+                }
+            });
+
+            // Monaco to Y.js synchronization
+            monacoEditor.onDidChangeModelContent((event) => {
+                if (isUpdatingFromY) return;
+                
+                ydoc.transact(() => {
+                    const changes = event.changes.sort((a, b) => b.rangeOffset - a.rangeOffset);
+                    
+                    for (const change of changes) {
+                        if (change.rangeLength > 0) {
+                            ytext.delete(change.rangeOffset, change.rangeLength);
+                        }
+                        if (change.text.length > 0) {
+                            ytext.insert(change.rangeOffset, change.text);
+                        }
+                    }
+                }, 'monaco');
+            });
+
+            // Handle connection status
+            const connectionStatusEl = document.querySelector('.connection-status');
+            const connectionIndicator = document.querySelector('.connection-indicator');
+            provider.on('status', event => {
+                connectionStatusEl.textContent = event.status;
+                connectionIndicator.className = 'connection-indicator ' + event.status;
+            });
+
+            // Set initial content on sync
+            provider.on('sync', isSynced => {
+                if (isSynced) {
+                    const content = ytext.toString();
+                    console.log('Y.js synced, content:', content);
+                    console.log('Y.js synced, content length:', content.length);
+                    console.log('Database content:', documentContent);
+                    console.log('Database content length:', documentContent ? documentContent.length : 'null');
+                    
+                    // 只有当编辑器内容为空或者与Y.js内容不同时才更新
+                    if ((monacoEditor.getValue().trim() === '' || monacoEditor.getValue() !== content) && content.trim() !== '') {
+                        isUpdatingFromY = true;
+                        monacoEditor.setValue(content);
+                        isUpdatingFromY = false;
+                        console.log('Monaco editor updated with Y.js content');
+                    }
+                    // 如果Y.js内容为空但数据库有内容，则用数据库内容初始化
+                    else if (content.trim() === '' && documentContent && documentContent.trim() !== '') {
+                        console.log('Initializing Y.js with database content:', documentContent);
+                        ytext.insert(0, documentContent);
+                    }
+                    // 如果Y.js和数据库都没有内容，但编辑器为空，则用默认内容初始化
+                    else if (content.trim() === '' && (!documentContent || documentContent.trim() === '') && monacoEditor.getValue().trim() === '') {
+                        console.log('Initializing with default content');
+                        const defaultContent = '// Welcome to Code Share!\n// Start typing your code here...\n\n';
+                        ytext.insert(0, defaultContent);
+                    }
+                }
+            });
+
+            // 如果我们有数据库内容且YText为空，则用数据库内容初始化Y.js文档
+            // 这个逻辑需要在observe事件绑定之后执行，以确保内容正确同步
+            // 确保在Y.js同步完成后再设置初始内容
+            setTimeout(() => {
+                // 只有当Y.js文本为空且我们有数据库内容时才设置初始内容
+                if (ytext.toString().trim() === '' && documentContent && documentContent.trim() !== '') {
+                    console.log('Initializing editor with database content after timeout:', documentContent);
+                    ytext.insert(0, documentContent);
+                }
+                // 如果Y.js已经有内容，确保Monaco编辑器也同步
+                else if (ytext.toString().trim() !== '' && monacoEditor.getValue().trim() === '') {
+                    console.log('Syncing Monaco editor with Y.js content after timeout');
+                    isUpdatingFromY = true;
+                    monacoEditor.setValue(ytext.toString());
+                    isUpdatingFromY = false;
+                }
+            }, 500);
+
+            setupCursorTracking();
+            
+            // 连接通知WebSocket
+            connectNotificationWebSocket();
+        }
+        
+        // 协作功能
+        document.getElementById('collaboration-btn')?.addEventListener('click', function() {
+            const modalElement = document.getElementById('collaborationModal');
+            let modal = bootstrap.Modal.getInstance(modalElement);
+            if (!modal) {
+                modal = new bootstrap.Modal(modalElement, {
+                    backdrop: true,
+                    keyboard: true
+                });
+            }
+            modal.show();
+            loadCollaborators();
+        });
+        // 邀请用户（通过UUID）
+        async function inviteUserByUuid() {
+            const invitationUuid = document.getElementById('invite-uuid').value.trim();
+            const permissionLevel = document.getElementById('permission-select-uuid').value;
+            
+            if (!invitationUuid) {
+                showToast('Please enter an invitation UUID!');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/documents/${docId}/invite-by-uuid`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: new URLSearchParams({
+                        'invitationUuid': invitationUuid,
+                        'permissionLevel': permissionLevel
+                    })
+                });
+                
+                if (response.ok) {
+                    showToast('User invited successfully!');
+                    document.getElementById('invite-uuid').value = '';
+                    loadCollaborators(); // 重新加载协作者列表
+                } else {
+                    const errorText = await response.text();
+                    showToast('Failed to invite user: ' + errorText);
+                }
+            } catch (err) {
+                console.error('Invite error:', err);
+                showToast('Failed to invite user!');
+            }
+        }
+        
+        // 添加邀请按钮事件监听器
+        document.getElementById('invite-by-uuid-btn').addEventListener('click', inviteUserByUuid);
+        
+        // 添加回车键监听器
+        document.getElementById('invite-uuid').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                inviteUserByUuid();
+            }
+        });
+        
+        // 加载协作者列表
+        async function loadCollaborators() {
+            try {
+                const response = await fetch(`/api/documents/${docId}/collaborators`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const collaborators = await response.json();
+                    displayCollaborators(collaborators);
+                } else {
+                    showToast('Failed to load collaborators!');
+                }
+            } catch (err) {
+                console.error('Load collaborators error:', err);
+                showToast('Failed to load collaborators!');
+            }
+        }
+        document.querySelectorAll('.permission-select').forEach(select => {
+            select.addEventListener('change', function() {
+                const userId = this.getAttribute('data-user-id');
+                const newPermission = this.value;
+                updateCollaboratorPermission(userId, newPermission);
+            });
+        });
+        document.querySelectorAll('.remove-collaborator').forEach(button => {
+            button.addEventListener('click', function() {
+                const userId = this.getAttribute('data-user-id');
+                removeCollaborator(userId);
+            });
+        });
+        // 显示协作者列表
+        function displayCollaborators(collaborators) {
+            const listContainer = document.getElementById('collaborators-list');
+            if (collaborators.length === 0) {
+                listContainer.innerHTML = '<div class="alert alert-info">No collaborators yet</div>';
+                return;
+            }
+
+            let html = '<div class="list-group">';
+            collaborators.forEach(collaborator => {
+                let permissionBadge = '';
+                let actionButtons = '';
+
+                switch (collaborator.permissionLevel) {
+                    case 'OWNER':
+                        permissionBadge = '<span class="badge bg-primary">Owner</span>';
+                        // 对于拥有者，不显示移除和修改权限的控件
+                        actionButtons = '';
+                        break;
+                    case 'EDITOR':
+                        permissionBadge = '<span class="badge bg-success">Editor</span>';
+                        actionButtons = `
+                    <!-- 修改权限下拉菜单 -->
+                    <select class="form-select form-select-sm ms-2 permission-select"
+                            data-user-id="${collaborator.userId}"
+                            style="width: auto;">
+                        <option value="EDITOR" ${collaborator.permissionLevel === 'EDITOR' ? 'selected' : ''}>Editor</option>
+                        <option value="VIEWER" ${collaborator.permissionLevel === 'VIEWER' ? 'selected' : ''}>Viewer</option>
+                    </select>
+                    <!-- 移除协作者按钮 -->
+                    <button class="btn btn-sm btn-danger ms-2 remove-collaborator"
+                            data-user-id="${collaborator.userId}">
+                        Remove
+                    </button>
+                `;
+                        break;
+                    case 'VIEWER':
+                        permissionBadge = '<span class="badge bg-secondary">Viewer</span>';
+                        actionButtons = `
+                    <!-- 修改权限下拉菜单 -->
+                    <select class="form-select form-select-sm ms-2 permission-select"
+                            data-user-id="${collaborator.userId}"
+                            style="width: auto;">
+                        <option value="EDITOR" ${collaborator.permissionLevel === 'EDITOR' ? 'selected' : ''}>Editor</option>
+                        <option value="VIEWER" ${collaborator.permissionLevel === 'VIEWER' ? 'selected' : ''}>Viewer</option>
+                    </select>
+                    <!-- 移除协作者按钮 -->
+                    <button class="btn btn-sm btn-danger ms-2 remove-collaborator"
+                            data-user-id="${collaborator.userId}">
+                        Remove
+                    </button>
+                `;
+                        break;
+                }
+
+                html += `
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>${collaborator.username}</strong>
+                </div>
+                <div class="d-flex align-items-center">
+                    ${permissionBadge}
+                    ${actionButtons}
+                </div>
+            </div>
+        `;
+            });
+            html += '</div>';
+
+            listContainer.innerHTML = html;
+        }
+        //更新协作者权限
+        async function updateCollaboratorPermission(userId, permissionLevel) {
+            try {
+                // 获取CSRF令牌
+                const csrfToken = document.querySelector('meta[name="_csrf"]')?.getAttribute('content');
+                const csrfHeader = document.querySelector('meta[name="_csrf_header"]')?.getAttribute('content');
+
+                // 构建请求头
+                const headers = {
+                    'Content-Type': 'application/json'
+                };
+
+                // 如果存在CSRF令牌，则添加到请求头中
+                if (csrfToken && csrfHeader) {
+                    headers[csrfHeader] = csrfToken;
+                }
+
+                const response = await fetch(`/api/documents/${docId}/collaborators/${userId}/permission`, {
+                    method: 'PUT',
+                    headers: headers,
+                    body: JSON.stringify({ permissionLevel: permissionLevel })
+                });
+
+                if (response.ok) {
+                    showToast('Permission updated successfully!');
+                    loadCollaborators(); // 重新加载协作者列表
+                } else {
+                    const errorMsg = await response.text();
+                    showToast('Failed to update permission: ' + errorMsg);
+                }
+            } catch (err) {
+                console.error('Update permission error:', err);
+                showToast('Failed to update permission!');
+            }
+        }
+        //移除协作者
+        async function removeCollaborator(userId) {
+            if (!confirm('Are you sure you want to remove this collaborator?')) {
+                return;
+            }
+
+            try {
+                // 获取CSRF令牌
+                const csrfToken = document.querySelector('meta[name="_csrf"]')?.getAttribute('content');
+                const csrfHeader = document.querySelector('meta[name="_csrf_header"]')?.getAttribute('content');
+
+                // 构建请求头
+                const headers = {};
+
+                // 如果存在CSRF令牌，则添加到请求头中
+                if (csrfToken && csrfHeader) {
+                    headers[csrfHeader] = csrfToken;
+                }
+
+                const response = await fetch(`/api/documents/${docId}/collaborators/${userId}`, {
+                    method: 'DELETE',
+                    headers: headers
+                });
+
+                if (response.ok) {
+                    showToast('Collaborator removed successfully!');
+                    loadCollaborators(); // 重新加载协作者列表
+                } else {
+                    const errorMsg = await response.text();
+                    showToast('Failed to remove collaborator: ' + errorMsg);
+                }
+            } catch (err) {
+                console.error('Remove collaborator error:', err);
+                showToast('Failed to remove collaborator!');
+            }
+        }
+
+        function colorFromId(id) {
+            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#FFA07A', '#98FB98'];
+            return colors[id % colors.length];
+        }
+
+        function setupCursorTracking() {
+            const container = document.getElementById('editor-container');
+            const overlay = document.getElementById('cursor-overlay');
+
+            // Track mouse movement for cursor awareness
+            container.addEventListener('mousemove', (e) => {
+                const rect = container.getBoundingClientRect();
+                const x = (e.clientX - rect.left) / rect.width;
+                const y = (e.clientY - rect.top) / rect.height;
+                awareness.setLocalStateField('cursor', { x, y, t: Date.now() });
+            });
+
+            container.addEventListener('mouseleave', () => {
+                awareness.setLocalStateField('cursor', null);
+            });
+
+            // Add touch event handling for mobile devices
+            container.addEventListener('touchmove', (e) => {
+                e.preventDefault(); // Prevent default touch behavior
+                const rect = container.getBoundingClientRect();
+                const touch = e.touches[0];
+                const x = (touch.clientX - rect.left) / rect.width;
+                const y = (touch.clientY - rect.top) / rect.height;
+                awareness.setLocalStateField('cursor', { x, y, t: Date.now() });
+            }, { passive: false });
+
+            container.addEventListener('touchend', () => {
+                awareness.setLocalStateField('cursor', null);
+            });
+
+            container.addEventListener('touchstart', (e) => {
+                const rect = container.getBoundingClientRect();
+                const touch = e.touches[0];
+                const x = (touch.clientX - rect.left) / rect.width;
+                const y = (touch.clientY - rect.top) / rect.height;
+                awareness.setLocalStateField('cursor', { x, y, t: Date.now() });
+            });
+
+            // Render other users' cursors
+            function renderCursors() {
+                const rect = container.getBoundingClientRect();
+                overlay.innerHTML = '';
+                const states = Array.from(awareness.getStates().entries());
+                
+                for (const [clientId, state] of states) {
+                    if (!state || clientId === awareness.clientID) continue;
+                    const cursor = state.cursor;
+                    if (!cursor || typeof cursor.x !== 'number' || typeof cursor.y !== 'number') continue;
+                    
+                    const user = state.user || { name: `User ${clientId}`, color: colorFromId(clientId) };
+                    const x = cursor.x * rect.width;
+                    const y = cursor.y * rect.height;
+
+                    const cursorEl = document.createElement('div');
+                    cursorEl.style.position = 'absolute';
+                    cursorEl.style.left = `${x}px`;
+                    cursorEl.style.top = `${y}px`;
+                    cursorEl.style.transform = 'translate(-50%, -50%)';
+                    cursorEl.style.pointerEvents = 'none';
+                    cursorEl.style.zIndex = '1001';
+
+                    const dot = document.createElement('div');
+                    dot.style.width = '12px';
+                    dot.style.height = '12px';
+                    dot.style.borderRadius = '50%';
+                    dot.style.background = user.color;
+                    dot.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+                    cursorEl.appendChild(dot);
+
+                    const label = document.createElement('div');
+                    label.textContent = user.name;
+                    label.style.position = 'absolute';
+                    label.style.left = '15px';
+                    label.style.top = '-8px';
+                    label.style.fontSize = '11px';
+                    label.style.padding = '2px 8px';
+                    label.style.borderRadius = '12px';
+                    label.style.color = '#fff';
+                    label.style.background = user.color;
+                    label.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+                    label.style.fontWeight = '500';
+                    label.style.whiteSpace = 'nowrap';
+                    cursorEl.appendChild(label);
+
+                    overlay.appendChild(cursorEl);
+                }
+            }
+
+            awareness.on('update', renderCursors);
+            window.addEventListener('resize', renderCursors);
+        }
+
+        // Language selector
+        document.getElementById('language-selector').addEventListener('change', (e) => {
+            const language = e.target.value;
+            monaco.editor.setModelLanguage(monacoEditor.getModel(), language);
+            
+            // Update user awareness with current language
+            if (awareness) {
+                const currentState = awareness.getLocalState();
+                const user = currentState.user || {};
+                user.language = language;
+                awareness.setLocalStateField('user', user);
+            }
+        });
+
+        // Toast消息显示
+        function showToast(message) {
+            const toastContainer = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast show';
+            toast.innerHTML = `
+                <div class="toast-body">
+                    ${message}
+                </div>
+            `;
+            toastContainer.appendChild(toast);
+            
+            // 3秒后自动移除
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                switch(e.key) {
+                    case 's':
+                        e.preventDefault();
+                        document.getElementById('save-btn').click();
+                        break;
+                }
+            }
+        });
+
+        // 页面关闭前自动保存
+        window.addEventListener('beforeunload', function(e) {
+            // 触发自动保存但不等待其完成，也不阻止页面关闭
+            autoSaveDocument();
+        });
+
+        // 自动保存函数
+        async function autoSaveDocument() {
+            // 检查用户是否有编辑权限
+            if (!canEdit) {
+                return;
+            }
+            
+            try {
+                const content = monacoEditor.getValue();
+                const language = document.getElementById('language-selector').value;
+                const titleElement = document.querySelector('h1 span');
+                const title = titleElement ? titleElement.textContent : 'Untitled Document';
+                
+                // 对于新文档（ID为'default-room'），不执行任何操作
+                if (docId === 'default-room') {
+                    return;
+                }
+                
+                // 保存文档内容
+                const saveResponse = await fetch('/documents/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="_csrf"]')?.getAttribute('content') || ''
+                    },
+                    body: new URLSearchParams({
+                        documentId: docId,
+                        content: content,
+                        language: language,
+                        title: title
+                    })
+                });
+                
+                if (saveResponse.ok) {
+                    console.log('Document auto-saved successfully!');
+                }
+            } catch (error) {
+                console.error('Auto-save error:', error);
+            }
+        }
+
+        // 初始化WebSocket通知连接
+        function connectNotificationWebSocket() {
+            // 连接到 WebSocket 服务器
+            webSocketManager.connect()
+                .then(() => {
+                    console.log('WebSocket connected successfully');
+                    
+                    // 订阅公共通知主题
+                    webSocketManager.subscribe('/topic/public', function(notification) {
+                        showNotification(notification);
+                    });
+                    
+                    // 订阅私聊通知主题
+                    webSocketManager.subscribe('/user/queue/messages', function(notification) {
+                        showNotification(notification);
+                    });
+                })
+                .catch(error => {
+                    console.error('Failed to connect to WebSocket:', error);
+                    // 更新连接状态显示
+                    const connectionStatusEl = document.querySelector('.connection-status');
+                    const connectionIndicator = document.querySelector('.connection-indicator');
+                    if (connectionStatusEl) connectionStatusEl.textContent = 'disconnected';
+                    if (connectionIndicator) connectionIndicator.className = 'connection-indicator disconnected';
+                });
+        }
+        
+        // 显示通知
+        function showNotification(notification) {
+
+            
+            // 根据不同类型生成通知标题和内容
+            let title = '通知';
+            let message = '';
+
+            switch(notification.type) {
+                //根据消息弹出不同的消息
+                case 'task':
+                    if (notification.action && notification.data.title) {
+                        message = `${notification.action}任务 ${notification.data.title}`;
+                    } else {
+                        message = '您有一个新任务';
+                    }
+                    // 增加未读通知计数
+                    notificationCount++;
+                    updateNotificationBadge();
+                    break;
+                case 'comment':
+                    title = '新评论';
+                    if (notification.action==='create'&& notification.data.content) {
+                        message = `${notification.data.author}发表了新的的评论`;
+                    } else if(notification.action==='like'&& notification.data===currentUsername)
+                    {
+                        message = `${notification.sender}点赞了你的评论`;
+
+                    }
+                    // 如果不是点赞你的评论，不显示通知
+                    else if(notification.action==='like'&& notification.data!==currentUsername) {
+                        return; // 直接返回，不显示通知
+                    }
+                    else {
+                        message = '您有一条评论';
+                    }
+                    // 增加未读通知计数
+                    notificationCount++;
+                    updateNotificationBadge();
+                    break;
+                default:
+                    // 增加未读通知计数
+                    notificationCount++;
+                    updateNotificationBadge();
+                    title = notification.title || '通知';
+                    message = notification.message || notification.content || '您有一条新通知';
+            }
+
+            // 创建通知项
+            const notificationItem = document.createElement('div');
+            notificationItem.className = 'notification-item unread';
+            notificationItem.innerHTML = `
+                <div class="notification-title">${title}</div>
+                <div class="notification-message">${message}</div>
+                <div class="notification-time">${new Date().toLocaleTimeString()}</div>
+            `;
+
+            // 添加点击事件
+            notificationItem.addEventListener('click', function() {
+                // 标记为已读
+                this.classList.remove('unread');
+                // 减少未读计数
+                if (notificationCount > 0) {
+                    notificationCount--;
+                    updateNotificationBadge();
+                }
+
+                // 如果通知包含动作，执行相应操作
+                if (notification.action) {
+                    handleNotificationAction(notification);
+                }
+            });
+
+            // 将通知添加到容器顶部
+            const container = document.getElementById('notifications-container');
+            container.insertBefore(notificationItem, container.firstChild);
+        }
+
+        // 更新通知徽章
+        function updateNotificationBadge() {
+            const badge = document.getElementById('notification-badge');
+            if (notificationCount > 0) {
+                badge.textContent = notificationCount;
+                badge.style.display = 'flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        // // 处理通知动作
+        // function handleNotificationAction(notification) {
+        //     // 根据不同类型显示不同的消息内容
+        //     let message = '';
+        //     switch(notification.type) {
+        //         case 'task':
+        //             // 对于任务类型，显示任务相关信息 TODO
+        //             if (notification.action && notification.data.title) {
+        //                 message = `新任务:${notification.action}任务 ${notification.data.title}`;
+        //             } else {
+        //                 message = '您有一个新任务';
+        //             }
+        //             break;
+        //         case 'comment':
+        //             // 对于评论类型，显示评论相关信息 TODO
+        //             if (notification.data && notification.data.content) {
+        //                 message = `新评论: ${notification.data.content.substring(0, 30)}${notification.data.content.length > 30 ? '...' : ''}`;
+        //             } else {
+        //                 message = '您有一条评论';
+        //             }
+        //             break;
+        //         default:
+        //             // 默认情况下显示消息内容或通用提示
+        //             message = notification.message || notification.content || '您有一条新通知';
+        //     }
+        //
+        //     // 显示toast消息
+        //     showToast(message);
+        // }
+        
+        // 清除所有通知
+        function clearNotifications() {
+            const container = document.getElementById('notifications-container');
+            container.innerHTML = '';
+            notificationCount = 0;
+            updateNotificationBadge();
+        }
+        
+        // 切换通知面板显示/隐藏
+        function toggleNotificationPanel() {
+            const panel = document.getElementById('notification-panel');
+            panel.classList.toggle('visible');
+            
+            // 如果面板打开，标记所有通知为已读
+            if (panel.classList.contains('visible')) {
+                const unreadItems = panel.querySelectorAll('.notification-item.unread');
+                unreadItems.forEach(item => {
+                    item.classList.remove('unread');
+                });
+                notificationCount = 0;
+                updateNotificationBadge();
+            }
+        }
+        
+        // 发送通知
+        function sendNotification(notification) {
+            // 发送到公共主题
+            webSocketManager.sendMessage('/app/notification', notification);
+        }
+    </script>
+    <script>
+        // 确保Bootstrap组件正常工作
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化下拉菜单
+            var dropdownElementList = [].slice.call(document.querySelectorAll('[data-bs-toggle="dropdown"]'));
+            dropdownElementList.map(function(dropdownToggleEl) {
+                return new bootstrap.Dropdown(dropdownToggleEl);
+            });
+            
+            // 初始化模态框
+            var modalElements = [].slice.call(document.querySelectorAll('.modal'));
+            modalElements.map(function(modalElement) {
+                // 检查模态框是否已经被初始化
+                if (!bootstrap.Modal.getInstance(modalElement)) {
+                    return new bootstrap.Modal(modalElement, {
+                        backdrop: true,
+                        keyboard: true
+                    });
+                }
+            });
+            
+            // 确保协作模态框能正确关闭
+            var collaborationModal = document.getElementById('collaborationModal');
+            if (collaborationModal) {
+                // 为模态框的关闭按钮添加事件监听器
+                collaborationModal.addEventListener('hidden.bs.modal', function () {
+                    console.log('Collaboration modal closed');
+                    // 清理可能的残留状态
+                    var backdrop = document.querySelector('.modal-backdrop');
+                    if (backdrop) {
+                        backdrop.remove();
+                    }
+                });
+            }
+            
+            // 处理Profile链接点击事件（仅在元素存在时添加监听器）
+            var profileLink = document.getElementById('profileLink');
+            if (profileLink) {
+                profileLink.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    window.location.href = '/profile';
+                });
+            }
+            
+            // 处理Logout链接点击事件（仅在元素存在时添加监听器）
+            var logoutLink = document.getElementById('logoutLink');
+            if (logoutLink) {
+                logoutLink.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    performLogout();
+                });
+            }
+        });
+        
+        // 执行登出操作
+        function performLogout() {
+            fetch('/api/auth/logout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    // 登出成功，重定向到登录页面
+                    window.location.href = '/login?logout';
+                } else {
+                    console.error('Logout failed');
+                    // 即使失败也重定向到登录页面
+                    window.location.href = '/login?logout';
+                }
+            })
+            .catch(error => {
+                console.error('Logout error:', error);
+                // 即使出错也重定向到登录页面
+                window.location.href = '/login?logout';
+            });
+        }
+        
+    </script>
+</body>
+</html>

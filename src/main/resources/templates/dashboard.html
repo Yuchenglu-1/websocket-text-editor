@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Code Share Dashboard</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Bootstrap CSS框架 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- 全局样式表 -->
+    <link rel="stylesheet" th:href="@{/style.css}">
+    <!-- 仪表板页面专用样式表 -->
+    <link rel="stylesheet" th:href="@{/css/dashboard.css}">
+</head>
+<body>
+<!-- 顶部导航栏 -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+        <!-- 网站链接 -->
+        <a class="navbar-brand" href="/">📝 Code Share</a>
+        <div class="navbar-nav ms-auto">
+            <div class="nav-item dropdown">
+                <!-- 用户下拉菜单触发器 -->
+                <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <!-- 如果用户有头像则显示头像，否则显示默认头像 -->
+                    <img th:if="${currentUser.avatarUrl}" th:src="${currentUser.avatarUrl}" alt="Avatar" class="rounded-circle me-2" width="32" height="32">
+                    <img th:unless="${currentUser.avatarUrl}" src='/uploads/avatars/default.png' alt="Avatar" class="rounded-circle me-2" width="32" height="32">
+                    <span th:text="${currentUser.username}">User</span>
+                </a>
+                <!-- 下拉菜单内容 -->
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
+                    <!-- 个人资料链接 -->
+                    <li><a class="dropdown-item" th:href="@{/profile}">👤 Profile</a></li>
+                    <!-- 操作日志链接 -->
+                    <li><a class="dropdown-item" th:href="@{/logs}">📝 Operation Logs</a></li>
+                    <li>
+                        <!-- 登出表单 -->
+                        <form th:action="@{/logout}" method="post" class="m-0">
+                            <button type="submit" class="dropdown-item">🚪 Logout</button>
+                        </form>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<div class="container-fluid mt-4">
+    <!-- 登录成功提示消息 -->
+    <div th:if="${loginSuccess}" class="alert alert-success alert-dismissible fade show" role="alert">
+        Welcome back! You have been successfully logged in.
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    
+    <!-- 操作成功提示消息 -->
+    <div th:if="${message}" class="alert alert-success alert-dismissible fade show" role="alert">
+        <span th:text="${message}">Success message</span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    
+    <!-- 错误提示消息 -->
+    <div th:if="${error}" class="alert alert-danger alert-dismissible fade show" role="alert">
+        <span th:text="${error}">Error message</span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    
+    <!-- 页面标题和新建文档按钮 -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Dashboard</h1>
+        <!-- 新建文档表单 -->
+        <form th:action="@{/documents/create}" method="post">
+            <button type="submit" class="btn btn-primary">➕ New Document</button>
+        </form>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <h3>Your Documents</h3>
+            <!-- 无文档时的提示信息 -->
+            <div th:if="${documents.empty}" class="alert alert-info">
+                You don't have any documents yet. Create your first document!
+            </div>
+            <!-- 在页面顶部添加标签筛选器 -->
+            <div class="row mb-3">
+                <div class="col-md-12">
+                    <h5>按标签筛选:</h5>
+                    <!-- 添加标签搜索输入框 -->
+                    <div class="mb-2">
+                        <input type="text" id="tagSearchInput" class="form-control form-control-sm" placeholder="输入标签名称进行筛选..." th:value="${tagsFilter}">
+                    </div>
+                    <div id="tagFilters" class="mb-2">
+                        <!-- 标签筛选按钮将通过JavaScript动态生成 -->
+                    </div>
+                    <!-- 清除标签筛选按钮 -->
+                    <button id="clearTagFilter" class="btn btn-sm btn-outline-secondary">清除筛选</button>
+                </div>
+            </div>
+            <!-- 文档列表 -->
+            <div th:unless="${documents.empty}" class="row row-cols-1 row-cols-md-2 g-4">
+                <div th:each="doc : ${documents}" class="col">
+                    <!-- 单个文档卡片 -->
+                    <div class="card h-100 document-card">
+                        <div class="card-body">
+                            <!-- 文档标题 -->
+                            <h5 class="card-title" th:text="${doc.title ?: 'Untitled Document'}">Document Title</h5>
+                            <!-- 添加标签显示 -->
+                            <div class="tags mb-2">
+                                <span>tags:</span>
+                                <span th:if="${doc.tags}" th:each="tag : ${doc.getTagList()}"
+                                    class="badge bg-secondary me-1"
+                                        th:text="${tag}"></span>
+                                <span th:unless="${doc.tags}">None</span>
+                            </div>
+                            <!-- 添加拥有者信息显示 -->
+                            <div class="mb-2">
+                                <small class="text-muted">
+                                    <i class="fas fa-user"></i> Owner:
+                                    <span th:text="${doc.owner.username}">Owner Name</span>
+                                </small>
+                            </div>  <!-- TODO -->
+                            <!-- 文档创建和更新时间 -->
+                            <p class="card-text text-muted">
+                                <small>
+                                    Created: <span th:text="${#dates.format(doc.createdAt, 'yyyy-MM-dd HH:mm')}">Date</span>
+                                    <br>
+                                    Updated: <span th:text="${#dates.format(doc.updatedAt, 'yyyy-MM-dd HH:mm')}">Date</span>
+                                </small>
+                            </p>
+                        </div>
+                        <!-- 文档操作按钮组 -->
+                        <div class="card-footer">
+                            <!-- 编辑文档按钮 -->
+                            <a th:href="@{/editor/{documentId}(documentId=${doc.uniqueId})}" class="btn btn-primary btn-sm">✏️ Edit</a>
+                            <!-- 复制文档ID按钮 -->
+                            <button class="btn btn-outline-secondary btn-sm copy-btn"
+                                    th:data-doc-id="${doc.uniqueId}"
+                                    th:data-doc-title="${doc.title ?: 'Untitled Document'}">📋 Copy ID</button>
+                            <!-- 删除文档按钮 -->
+                            <button class="btn btn-outline-danger btn-sm delete-btn"
+                                    th:data-doc-id="${doc.uniqueId}"
+                                    th:data-doc-title="${doc.title ?: 'Untitled Document'}">🗑️ Delete</button>
+                            <!-- 编辑文档标题按钮 -->
+                            <button class="btn btn-outline-secondary btn-sm edit-title-btn"
+                                    th:data-doc-id="${doc.uniqueId}"
+                                    th:data-doc-title="${doc.title ?: 'Untitled Document'}">✏️ Rename</button>
+                            <!-- 添加标签按钮 -->
+                            <button class="btn btn-outline-secondary btn-sm add-tag-btn"
+                                    th:data-doc-id="${doc.uniqueId}"
+                                    th:data-doc-title="${doc.title ?: 'Untitled Document'}">🏷️ Add Tag</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <div class="col-md-4">
+            <!-- 加入文档卡片 -->
+            <div class="card">
+                <div class="card-header">
+                    <h5>👥 Join Document</h5>
+                </div>
+                <div class="card-body">
+                    <!-- 加入文档表单 -->
+                    <form th:action="@{/documents/join}" method="post">
+                        <div class="mb-3">
+                            <label for="documentId" class="form-label">Document ID</label>
+                            <input type="text" class="form-control" id="documentId" name="documentId" required>
+                        </div>
+                        <button type="submit" class="btn btn-success">🔗 Join</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 操作卡片 -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5>📊 Operations</h5>
+                </div>
+                <div class="card-body">
+                    <a href="/logs" class="btn btn-info w-100 mb-2">📝 View Operation Logs</a>
+                </div>
+            </div>
+
+            <!-- 用户信息卡片 -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5>👤 User Info</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        <!-- 用户头像 -->
+                        <img th:if="${currentUser.avatarUrl}" th:src="${currentUser.avatarUrl}" alt="Avatar" class="rounded-circle me-3" width="64" height="64">
+                        <img th:unless="${currentUser.avatarUrl}" src='/uploads/avatars/default.png' alt="Avatar" class="rounded-circle me-3" width="64" height="64">
+                        <div>
+                            <!-- 用户名 -->
+                            <h6 class="mb-0" th:text="${currentUser.username}">Username</h6>
+                            <small class="text-muted">User</small>
+                        </div>
+                    </div>
+                    <!-- 用户邮箱和电话信息 -->
+                    <p class="mb-1"><strong>Email:</strong> <span th:text="${currentUser.email ?: 'Not provided'}">email@example.com</span></p>
+                    <p class="mb-0"><strong>Phone:</strong> <span th:text="${currentUser.phoneNumber ?: 'Not provided'}">Not provided</span></p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- Toast消息容器 -->
+<div id="toast-container" class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1055;"></div>
+
+<!-- 添加标签模态框 -->
+<div class="modal fade" id="addTagModal" tabindex="-1" aria-labelledby="addTagModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addTagModalLabel">添加标签</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addTagForm">
+                    <input type="hidden" id="tagDocumentId">
+                    <div class="mb-3">
+                        <label for="tagInput" class="form-label">标签名称</label>
+                        <input type="text" class="form-control" id="tagInput" placeholder="输入标签名称，多个标签用逗号分隔">
+                        <div class="form-text">可以输入多个标签，用逗号分隔</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="saveTagBtn">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script th:inline="javascript">
+    /*<![CDATA[*/
+    document.addEventListener('DOMContentLoaded', function() {
+        loadAllTags();
+        // 初始化 Bootstrap 组件
+        var dropdownElementList = [].slice.call(document.querySelectorAll('[data-bs-toggle="dropdown"]'));
+        dropdownElementList.map(function(dropdownToggleEl) {
+            return new bootstrap.Dropdown(dropdownToggleEl);
+        });
+
+        // 初始化 Alerts
+        var alertList = [].slice.call(document.querySelectorAll('.alert'));
+        alertList.map(function(alertEl) {
+            return new bootstrap.Alert(alertEl);
+        });
+        
+        // 添加标签搜索输入框的事件监听器
+        const tagSearchInput = document.getElementById('tagSearchInput');
+        if (tagSearchInput) {
+            // 监听输入事件
+            tagSearchInput.addEventListener('input', function() {
+                filterTags(this.value);
+            });
+            
+            // 如果页面加载时有标签筛选参数，设置搜索框的值
+            // 通过Thymeleaf设置搜索框的值
+        }
+    });
+
+    // 添加标签按钮事件监听器
+    document.querySelectorAll('.add-tag-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const docId = this.getAttribute('data-doc-id');
+            const docTitle = this.getAttribute('data-doc-title');
+            
+            // 设置模态框中的文档ID
+            document.getElementById('tagDocumentId').value = docId;
+            
+            // 清空之前的输入
+            document.getElementById('tagInput').value = '';
+            
+            // 显示模态框
+            const modal = new bootstrap.Modal(document.getElementById('addTagModal'));
+            modal.show();
+        });
+    });
+
+    // 保存标签按钮事件监听器
+    document.getElementById('saveTagBtn').addEventListener('click', function() {
+        const docId = document.getElementById('tagDocumentId').value;
+        const tagInput = document.getElementById('tagInput').value;
+        
+        if (!tagInput.trim()) {
+            showToast('请输入至少一个标签!', 'danger');
+            return;
+        }
+        
+        // 发送添加标签请求
+        fetch(`/documents/add-tags/${docId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ tags: tagInput })
+        })
+            .then(response => {
+                if (response.ok) {
+                    // 关闭模态框
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('addTagModal'));
+                    modal.hide();
+                    
+                    // 显示成功消息
+                    showToast('标签添加成功!', 'success');
+                    
+                    // 重新加载页面以反映更改
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    showToast('添加标签失败!', 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('添加标签时发生错误!', 'danger');
+            });
+    });
+
+    // 复制功能逻辑
+    document.querySelectorAll('.copy-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const docId = this.getAttribute('data-doc-id');
+            const docTitle = this.getAttribute('data-doc-title');
+
+            // 优先尝试现代 Clipboard API
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(docId).then(() => {
+                    showToast(`📋 Document ID for "${docTitle}" copied!`, 'success');
+                }).catch(err => {
+                    console.error('Clipboard API failed, trying fallback...', err);
+                    fallbackCopyText(docId, docTitle);
+                });
+            } else {
+                // 如果不支持（如非 HTTPS 环境），直接使用降级方案
+                fallbackCopyText(docId, docTitle);
+            }
+        });
+    });
+    // 清除标签筛选
+    document.getElementById('clearTagFilter').addEventListener('click', function() {
+        // 清空搜索框
+        const tagSearchInput = document.getElementById('tagSearchInput');
+        if (tagSearchInput) {
+            tagSearchInput.value = '';
+        }
+        
+        // 重新加载页面，不带标签参数
+        window.location.href = '/';
+    });
+    // 兼容性复制方案 (execCommand)
+    function fallbackCopyText(text, title) {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        try {
+            const successful = document.execCommand('copy');
+            if (successful) {
+                showToast(`📋 Document ID for "${title}" copied!`, 'success');
+            } else {
+                showToast('Failed to copy document ID! ❌', 'danger');
+            }
+        } catch (err) {
+            showToast('Failed to copy document ID! ❌', 'danger');
+        }
+
+        document.body.removeChild(textArea);
+    }
+    // 获取所有标签
+    function loadAllTags() {
+        fetch('/documents/tags')
+            .then(response => response.json())
+            .then(tags => {
+                renderTagFilters(tags);
+                // 保存所有标签用于搜索
+                window.allTags = tags;
+            })
+            .catch(error => {
+                console.error('Error loading tags:', error);
+            });
+    }
+    
+    // 根据搜索词筛选标签
+    function filterTags(searchTerm) {
+        if (!window.allTags) return;
+        
+        const filteredTags = searchTerm ? 
+            window.allTags.filter(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())) :
+            window.allTags;
+            
+        renderTagFilters(filteredTags);
+    }
+    
+    // 渲染标签筛选器
+    function renderTagFilters(tags) {
+        const container = document.getElementById('tagFilters');
+        container.innerHTML = '';
+
+        // 获取当前页面URL中的标签参数
+        const urlParams = new URLSearchParams(window.location.search);
+        const currentTagsParam = urlParams.get('tags');
+        const currentTags = currentTagsParam ? currentTagsParam.split(',').map(t => t.trim()).filter(t => t) : [];
+
+        tags.forEach(tag => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'btn btn-sm btn-outline-primary me-2 mb-2';
+            button.textContent = `${tag}`;
+            button.dataset.tag = tag;
+            
+            // 检查该标签是否已在当前筛选中，如果是则改变样式
+            if (currentTags.includes(tag)) {
+                button.classList.remove('btn-outline-primary');
+                button.classList.add('btn-primary');
+            }
+            
+            button.addEventListener('click', () => toggleTagInSearch(tag));
+            container.appendChild(button);
+        });
+    }
+    
+    // 切换标签在搜索框中的状态
+    function toggleTagInSearch(tag) {
+        const tagSearchInput = document.getElementById('tagSearchInput');
+        if (!tagSearchInput) return;
+        
+        const currentTags = tagSearchInput.value.split(',').map(t => t.trim()).filter(t => t);
+        const tagIndex = currentTags.indexOf(tag);
+        
+        if (tagIndex > -1) {
+            // 如果标签已存在，移除它
+            currentTags.splice(tagIndex, 1);
+        } else {
+            // 如果标签不存在，添加它
+            currentTags.push(tag);
+        }
+        
+        // 更新搜索框的值
+        tagSearchInput.value = currentTags.join(', ');
+        
+        // 重新加载页面并传递标签参数
+        const tagsParam = currentTags.length > 0 ? currentTags.join(',') : '';
+        if (tagsParam) {
+            window.location.href = `/?tags=${encodeURIComponent(tagsParam)}`;
+        } else {
+            // 如果没有标签，重新加载页面显示所有文档
+            window.location.href = '/';
+        }
+    }
+
+
+
+
+    // 显示 Toast 消息
+    function showToast(message, type = 'info') {
+        const toastContainer = document.getElementById('toast-container') || createToastContainer();
+        
+        // 根据类型设置背景色
+        let bgClass = 'text-white bg-info';
+        if (type === 'danger') bgClass = 'text-white bg-danger';
+        if (type === 'success') bgClass = 'text-white bg-success';
+
+        const toastEl = document.createElement('div');
+        toastEl.className = `toast align-items-center border-0 ${bgClass}`;
+        toastEl.setAttribute('role', 'alert');
+        toastEl.setAttribute('aria-live', 'assertive');
+        toastEl.setAttribute('aria-atomic', 'true');
+
+        toastEl.innerHTML = `
+            <div class="d-flex">
+                <div class="toast-body">
+                    ${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        `;
+
+        toastContainer.appendChild(toastEl);
+
+        // 使用 Bootstrap 5 API 初始化
+        const toast = new bootstrap.Toast(toastEl, { delay: 3000 });
+        toast.show();
+
+        // 隐藏后从 DOM 移除
+        toastEl.addEventListener('hidden.bs.toast', function () {
+            toastEl.remove();
+        });
+    }
+
+    // 创建 Toast 容器（如果不存在）
+    function createToastContainer() {
+        const container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+        container.style.zIndex = '1055';
+        document.body.appendChild(container);
+        return container;
+    }
+    // 删除文档功能
+    document.querySelectorAll('.delete-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const docId = this.getAttribute('data-doc-id');
+            const docTitle = this.getAttribute('data-doc-title');
+
+            // 确认对话框
+            if (confirm(`Are you sure you want to delete the document "${docTitle}"? This action cannot be undone.`)) {
+                // 发送删除请求
+                fetch(`/documents/delete/${docId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                    .then(response => {
+                        if (response.ok) {
+                            // 重新加载页面以反映更改
+                            window.location.reload();
+                            showToast(`Document "${docTitle}" deleted successfully!`, 'success');
+                        } else {
+                            showToast(`Failed to delete document "${docTitle}"!`, 'danger');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showToast(`Error deleting document "${docTitle}"!`, 'danger');
+                    });
+            }
+        });
+    });
+
+    // 编辑文档标题功能
+    document.querySelectorAll('.edit-title-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const docId = this.getAttribute('data-doc-id');
+            const currentTitle = this.getAttribute('data-doc-title');
+
+            // 提示用户输入新标题
+            const newTitle = prompt('Enter new title for the document:', currentTitle);
+
+            // 如果用户没有取消并且输入了新标题
+            if (newTitle !== null && newTitle.trim() !== '' && newTitle !== currentTitle) {
+                // 发送更新标题请求
+                fetch(`/documents/update-title/${docId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({ title: newTitle.trim() })
+                })
+                    .then(response => {
+                        if (response.ok) {
+                            // 重新加载页面以反映更改
+                            window.location.reload();
+                            showToast(`Document title updated to "${newTitle}"!`, 'success');
+                        } else {
+                            showToast(`Failed to update document title!`, 'danger');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showToast(`Error updating document title!`, 'danger');
+                    });
+            }
+        });
+    });
+
+</script>
+</body>
+</html>

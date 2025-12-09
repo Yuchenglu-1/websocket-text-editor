@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Online Users</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" th:href="@{/style.css}">
+    <style>
+        .user-card {
+            transition: transform 0.2s;
+        }
+        .user-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .pagination-container {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .online-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #4CAF50;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        /* 通知面板样式 */
+        .notification-panel {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            width: 350px;
+            max-height: 500px;
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: none;
+            flex-direction: column;
+        }
+        
+        .notification-header {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .notifications-container {
+            overflow-y: auto;
+            max-height: 400px;
+        }
+        
+        .notification-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+        
+        .notification-item:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .notification-item.unread {
+            background-color: #e9f7fe;
+        }
+        
+        .notification-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .notification-message {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .notification-time {
+            font-size: 0.8em;
+            color: #999;
+        }
+        
+        .notification-badge {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background-color: #dc3545;
+            color: white;
+            border-radius: 50%;
+            padding: 2px 6px;
+            font-size: 0.7em;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">📝 Code Share</a>
+            <div class="navbar-nav ms-auto">
+                <div class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <!-- 如果用户有头像则显示头像，否则显示默认头像 -->
+                        <img th:if="${currentUser.avatarUrl}" th:src="${currentUser.avatarUrl}" alt="Avatar" class="rounded-circle me-2" width="32" height="32">
+                        <img th:unless="${currentUser.avatarUrl}" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgZmlsbD0iY3VycmVudENvbG9yIiBjbGFzcz0iYmkgYmktcGVyc29uLWJyaWdleCIgdmlld0JveD0iMCAwIDE2IDE2Ij4KICA8cGF0aCBkPSJNOC41IDJBNi41IDYuNSAwIDEgMCA4IDE1YTUuMDAzIDUuMDAzIDAgMSAwIDAgMTBhNi41IDYuNSAwIDAgMCA2LjUtNi41djEuNWEzLjUgMy41IDAgMSAxLTctN3oiLz4KICA8Y2lyY2xlIGN4PSI4IiBjeT0iOCIgcj0iMyIvPgo8L3N2Zz4=" alt="Avatar" class="rounded-circle me-2" width="32" height="32">
+                        <span th:text="${currentUser.username}">User</span>
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
+                        <li><a class="dropdown-item" href="/profile" id="profileLink">👤 Profile</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#" id="logoutLink">🚪 Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div class="d-flex align-items-center">
+                <a href="javascript:void(0)" id="back-btn" class="btn btn-secondary me-3">← 返回</a>
+                <h1>👥 Online Users</h1>
+            </div>
+            <div class="d-flex align-items-center">
+                <span class="badge bg-success me-2">
+                    <span class="online-indicator"></span>
+                    Online: <span id="online-count">0</span>
+                </span>
+                <button id="refresh-btn" class="btn btn-outline-primary btn-sm">
+                    🔄 Refresh
+                </button>
+                <!-- 消息通知按钮 -->
+                <div class="position-relative ms-2">
+                    <button id="notification-btn" class="btn btn-sm btn-outline-primary position-relative">
+                        <i class="fas fa-bell"></i> 🔔
+                    </button>
+                    <!-- 通知徽章，显示未读通知数量 -->
+                    <span id="notification-badge" class="notification-badge" style="display: none;">0</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 通知面板 -->
+        <div id="notification-panel" class="notification-panel">
+            <div class="notification-header">
+                <h6>通知</h6>
+                <!-- 清除所有通知按钮 -->
+                <button id="clear-notifications" class="btn btn-sm btn-outline-secondary">清除</button>
+            </div>
+            <div id="notifications-container" class="notifications-container">
+                <!-- 通知内容将通过JavaScript动态添加 -->
+            </div>
+        </div>
+
+        <div class="row" id="users-container">
+            <!-- 用户卡片将通过JavaScript动态加载 -->
+        </div>
+
+        <div class="pagination-container">
+            <nav>
+                <ul class="pagination" id="pagination">
+                    <!-- 分页按钮将通过JavaScript动态生成 -->
+                </ul>
+            </nav>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <!-- 添加SockJS和STOMP库 -->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2/lib/stomp.min.js"></script>
+    <script src="/js/websocket-manager.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script th:inline="javascript">
+        /*<![CDATA[*/
+        const currentUsername = /*[[${currentUser.username}]]*/ 'user';
+        /*]]>*/
+    </script>
+    <script>
+        let currentPage = 1;
+        const pageSize = 10;
+        let allUsers = [];
+        let subscriptionId = null; // 用于存储WebSocket订阅ID
+        let notificationCount = 0; // 未读通知计数
+        
+        // 页面加载时获取在线用户
+        document.addEventListener('DOMContentLoaded', function() {
+            // 页面加载完成后立即刷新一次在线用户列表
+            setTimeout(loadOnlineUsers, 100);
+            
+            // 绑定刷新按钮事件
+            document.getElementById('refresh-btn').addEventListener('click', loadOnlineUsers);
+            
+            // 绑定登出事件
+            document.getElementById('logoutLink').addEventListener('click', function(e) {
+                e.preventDefault();
+                performLogout();
+            });
+            
+            // 绑定Profile链接事件
+            document.getElementById('profileLink').addEventListener('click', function(e) {
+                e.preventDefault();
+                window.location.href = '/profile';
+            });
+            
+            // 绑定返回按钮事件
+            document.getElementById('back-btn').addEventListener('click', function() {
+                // 检查是否有referrer（来源页面）
+                if (document.referrer) {
+                    // 如果有来源页面，则返回来源页面
+                    window.history.back();
+                } else {
+                    // 如果没有来源页面，则返回到主页
+                    window.location.href = '/';
+                }
+            });
+            
+            // 绑定通知按钮事件
+            document.getElementById('notification-btn').addEventListener('click', function(e) {
+                e.stopPropagation();
+                toggleNotificationPanel();
+            });
+            
+            // 绑定清除通知按钮事件
+            document.getElementById('clear-notifications').addEventListener('click', function() {
+                clearNotifications();
+            });
+            
+            // 点击页面其他地方隐藏通知面板
+            document.addEventListener('click', function(e) {
+                const notificationPanel = document.getElementById('notification-panel');
+                const notificationBtn = document.getElementById('notification-btn');
+                
+                if (notificationPanel.style.display === 'flex' && 
+                    !notificationPanel.contains(e.target) && 
+                    e.target !== notificationBtn) {
+                    notificationPanel.style.display = 'none';
+                }
+            });
+            
+            // 初始化WebSocket连接
+            initWebSocket();
+        });
+
+        // 初始化WebSocket连接
+        function initWebSocket() {
+            // 连接到 WebSocket 服务器
+            webSocketManager.connect()
+                .then(() => {
+                    console.log('WebSocket connected successfully');
+                    
+                    // 订阅在线用户更新主题
+                    subscriptionId = webSocketManager.subscribe('/topic/online-users', function(message) {
+                        // 只处理在线用户更新的消息
+                        if (message && message.type === 'online-users') {
+                            handleOnlineUsersUpdate(message);
+                        }
+                    });
+                    
+                    // 订阅公共通知主题
+                    webSocketManager.subscribe('/topic/public', function(notification) {
+                        showNotification(notification);
+                    });
+                    
+                    // 订阅私聊通知主题
+                    webSocketManager.subscribe('/user/queue/messages', function(notification) {
+                        showNotification(notification);
+                    });
+                })
+                .catch(error => {
+                    console.error('Failed to connect to WebSocket:', error);
+                    showToast('无法连接到通知服务器');
+                });
+        }
+
+        // 处理在线用户更新
+        function handleOnlineUsersUpdate(message) {
+            console.log('Received online users update:', message);
+            // 重新加载在线用户列表
+            loadOnlineUsers();
+        }
+        
+        // 显示通知
+        function showNotification(notification) {
+            console.log('Received notification:', notification);
+            
+            // 检查通知是否有效
+            if (!notification) {
+                return;
+            }
+            
+            // 获取通知消息文本
+            const message = getNotificationMessage(notification);
+            
+            // 如果消息为空或未定义，则不显示
+            if (!message || message === 'undefined' || message.trim() === '') {
+                return;
+            }
+            
+            // 增加未读通知计数
+            notificationCount++;
+            updateNotificationBadge();
+            
+            // 添加通知到通知面板
+            addNotificationToPanel(notification);
+            
+            // 显示Toast消息 - 只有在消息有效时才显示
+            showToast(message);
+        }
+        
+        // 获取通知消息文本
+        function getNotificationMessage(notification) {
+            // 检查通知是否有效
+            if (!notification) {
+                return '';
+            }
+            
+            // 根据不同类型生成消息文本
+            switch(notification.type) {
+                case 'task':
+                    if (notification.action && notification.data && notification.data.title) {
+                        return `任务更新: ${notification.action}任务 ${notification.data.title}`;
+                    } else if (notification.data && notification.data.title) {
+                        return `任务更新: ${notification.data.title}`;
+                    } else {
+                        return '您有一个新任务';
+                    }
+                case 'comment':
+                    if (notification.action==='create'&& notification.data.content) {
+                       return `${notification.data.author}发表了新的的评论`;
+                    } else if(notification.action==='like'&& notification.data===currentUsername)
+                    {
+                       return `${notification.sender}点赞了你的评论`;
+
+                    }
+                    // 如果不是点赞你的评论，不显示通知
+                    else if(notification.action==='like'&& notification.data!==currentUsername) {
+                        return; // 直接返回，不显示通知
+                    }
+                    else {
+                        return '您有一条评论';
+                    }
+                    break;
+                case 'online-users':
+                    return '在线用户列表已更新';
+                default:
+                    // 尝试从常见的字段中获取消息内容
+                    if (notification.content) {
+                        return notification.content;
+                    } else if (notification.message) {
+                        return notification.message;
+                    } else if (notification.text) {
+                        return notification.text;
+                    } else {
+                        // 如果没有可识别的内容，返回空字符串
+                        return '';
+                    }
+            }
+        }
+        
+        // 添加通知到面板
+        function addNotificationToPanel(notification) {
+            // 检查通知是否有效
+            if (!notification) {
+                return;
+            }
+            
+            // 获取通知消息
+            const message = getNotificationMessage(notification);
+            
+            // 如果消息为空，则不添加到面板
+            if (!message || message === 'undefined' || message.trim() === '') {
+                return;
+            }
+            
+            const container = document.getElementById('notifications-container');
+            
+            // 创建通知元素
+            const notificationEl = document.createElement('div');
+            notificationEl.className = 'notification-item unread';
+            notificationEl.innerHTML = `
+                <div class="notification-title">${getNotificationTitle(notification)}</div>
+                <div class="notification-message">${message}</div>
+                <div class="notification-time">${formatNotificationTime(notification.timestamp)}</div>
+            `;
+            
+            // 添加点击事件
+            notificationEl.addEventListener('click', function() {
+                // 标记为已读
+                this.classList.remove('unread');
+                // 减少未读计数
+                if (notificationCount > 0) {
+                    notificationCount--;
+                    updateNotificationBadge();
+                }
+            });
+            
+            // 将新通知插入到顶部
+            if (container.firstChild) {
+                container.insertBefore(notificationEl, container.firstChild);
+            } else {
+                container.appendChild(notificationEl);
+            }
+        }
+        
+        // 获取通知标题
+        function getNotificationTitle(notification) {
+            // 检查通知是否有效
+            if (!notification) {
+                return '未知通知';
+            }
+            
+            switch(notification.type) {
+                case 'task':
+                    return '任务通知';
+                case 'comment':
+                    return '评论通知';
+                case 'online-users':
+                    return '用户状态';
+                default:
+                    // 尝试从通知中获取标题相关信息
+                    if (notification.title) {
+                        return notification.title;
+                    } else if (notification.subject) {
+                        return notification.subject;
+                    } else {
+                        return '系统通知';
+                    }
+            }
+        }
+        
+        // 格式化通知时间
+        function formatNotificationTime(timestamp) {
+            // 如果没有时间戳，返回默认值
+            if (!timestamp) return '刚刚';
+            
+            let notificationTime;
+            
+            // 尝试解析不同格式的时间戳
+            if (typeof timestamp === 'string') {
+                // 尝试解析ISO字符串
+                notificationTime = new Date(timestamp);
+                if (isNaN(notificationTime.getTime())) {
+                    // 如果解析失败，尝试其他格式
+                    notificationTime = new Date(parseInt(timestamp));
+                }
+            } else if (typeof timestamp === 'number') {
+                // 如果是数字，假设是毫秒时间戳
+                notificationTime = new Date(timestamp);
+            } else {
+                // 如果是Date对象或其他格式
+                notificationTime = new Date(timestamp);
+            }
+            
+            // 检查日期是否有效
+            if (isNaN(notificationTime.getTime())) {
+                return '未知时间';
+            }
+            
+            const now = new Date();
+            const diffMs = now - notificationTime;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+            
+            if (diffMins < 1) {
+                return '刚刚';
+            } else if (diffMins < 60) {
+                return `${diffMins}分钟前`;
+            } else if (diffHours < 24) {
+                return `${diffHours}小时前`;
+            } else {
+                return `${diffDays}天前`;
+            }
+        }
+        
+        // 更新通知徽章
+        function updateNotificationBadge() {
+            const badge = document.getElementById('notification-badge');
+            if (notificationCount > 0) {
+                badge.textContent = notificationCount;
+                badge.style.display = 'inline';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+        
+        // 切换通知面板显示/隐藏
+        function toggleNotificationPanel() {
+            const panel = document.getElementById('notification-panel');
+            if (panel.style.display === 'flex') {
+                panel.style.display = 'none';
+            } else {
+                panel.style.display = 'flex';
+                // 打开面板时重置未读计数
+                notificationCount = 0;
+                updateNotificationBadge();
+                
+                // 标记所有通知为已读
+                const notifications = document.querySelectorAll('.notification-item.unread');
+                notifications.forEach(notification => {
+                    notification.classList.remove('unread');
+                });
+            }
+        }
+        
+        // 清除所有通知
+        function clearNotifications() {
+            const container = document.getElementById('notifications-container');
+            container.innerHTML = '<div class="text-center text-muted py-3">暂无通知</div>';
+            notificationCount = 0;
+            updateNotificationBadge();
+        }
+        
+        // 获取在线用户列表
+        async function loadOnlineUsers() {
+            try {
+                const response = await fetch('/api/users/online', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    allUsers = await response.json();
+                    document.getElementById('online-count').textContent = allUsers.length;
+                    renderUsers();
+                } else {
+                    showToast('Failed to load online users');
+                }
+            } catch (error) {
+                console.error('Error loading online users:', error);
+                showToast('Error loading online users');
+            }
+        }
+
+        // 渲染用户列表
+        function renderUsers() {
+            const totalPages = Math.ceil(allUsers.length / pageSize);
+            const startIndex = (currentPage - 1) * pageSize;
+            const endIndex = Math.min(startIndex + pageSize, allUsers.length);
+            const usersToShow = allUsers.slice(startIndex, endIndex);
+            
+            const container = document.getElementById('users-container');
+            container.innerHTML = '';
+            
+            if (usersToShow.length === 0) {
+                container.innerHTML = `
+                    <div class="col-12">
+                        <div class="alert alert-info text-center">
+                            No online users found
+                        </div>
+                    </div>
+                `;
+                renderPagination(totalPages);
+                return;
+            }
+            
+            usersToShow.forEach(user => {
+                const userCard = document.createElement('div');
+                userCard.className = 'col-lg-4 col-md-6 col-sm-12 mb-4';
+                userCard.innerHTML = `
+                    <div class="card user-card h-100">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center mb-3">
+                                <img src="${user.avatarUrl || '/uploads/avatars/default.png'}"
+                                     alt="Avatar"
+                                     class="rounded-circle me-3"
+                                     width="50"
+                                     height="50"
+                                     onerror="this.src='/images/default-avatar.png'">
+                                <div>
+                                    <h5 class="card-title mb-0">${user.username}</h5>
+                                    <small class="text-muted">
+                                        <span class="online-indicator"></span>
+                                        Online
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <small class="text-muted">Email:</small>
+                                <div>${user.email || 'Not provided'}</div>
+                            </div>
+                            <div class="mb-2">
+                                <small class="text-muted">Phone:</small>
+                                <div>${user.phoneNumber || 'Not provided'}</div>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mt-3">
+                                <span class="badge bg-primary">User</span>
+                                ${user.username === currentUsername ? 
+                                    '<span class="badge bg-success">You</span>' : 
+                                    `<button class="btn btn-sm btn-outline-primary invite-btn" 
+                                             data-username="${user.username}"
+                                             data-uuid="${user.invitationUuid}">
+                                        📨 Invite
+                                    </button>`}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(userCard);
+            });
+            
+            // 绑定邀请按钮事件
+            document.querySelectorAll('.invite-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const username = this.getAttribute('data-username');
+                    const uuid = this.getAttribute('data-uuid');
+                    copyToClipboard(uuid);
+                    showToast(`Invitation UUID for ${username} copied to clipboard!`);
+                });
+            });
+            
+            renderPagination(totalPages);
+        }
+
+        // 渲染分页控件
+        function renderPagination(totalPages) {
+            const pagination = document.getElementById('pagination');
+            pagination.innerHTML = '';
+            
+            if (totalPages <= 1) {
+                return;
+            }
+            
+            // 上一页按钮
+            const prevLi = document.createElement('li');
+            prevLi.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
+            prevLi.innerHTML = `
+                <a class="page-link" href="#" aria-label="Previous">
+                    <span aria-hidden="true">&laquo;</span>
+                </a>
+            `;
+            if (currentPage > 1) {
+                prevLi.querySelector('a').addEventListener('click', function(e) {
+                    e.preventDefault();
+                    currentPage--;
+                    renderUsers();
+                });
+            }
+            pagination.appendChild(prevLi);
+            
+            // 页码按钮
+            for (let i = 1; i <= totalPages; i++) {
+                const li = document.createElement('li');
+                li.className = `page-item ${i === currentPage ? 'active' : ''}`;
+                li.innerHTML = `<a class="page-link" href="#">${i}</a>`;
+                
+                if (i !== currentPage) {
+                    li.querySelector('a').addEventListener('click', function(e) {
+                        e.preventDefault();
+                        currentPage = i;
+                        renderUsers();
+                    });
+                }
+                
+                pagination.appendChild(li);
+            }
+            
+            // 下一页按钮
+            const nextLi = document.createElement('li');
+            nextLi.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
+            nextLi.innerHTML = `
+                <a class="page-link" href="#" aria-label="Next">
+                    <span aria-hidden="true">&raquo;</span>
+                </a>
+            `;
+            if (currentPage < totalPages) {
+                nextLi.querySelector('a').addEventListener('click', function(e) {
+                    e.preventDefault();
+                    currentPage++;
+                    renderUsers();
+                });
+            }
+            pagination.appendChild(nextLi);
+        }
+
+        // 复制到剪贴板
+        function copyToClipboard(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+        }
+
+        // Toast消息显示
+        function showToast(message) {
+            // 如果消息为空或未定义，则不显示
+            if (!message || message === 'undefined' || message.trim() === '') {
+                return;
+            }
+            
+            const toastContainer = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast show';
+            toast.innerHTML = `
+                <div class="toast-body">
+                    ${message}
+                </div>
+            `;
+            toastContainer.appendChild(toast);
+            
+            // 3秒后自动移除
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.remove();
+                }
+            }, 3000);
+        }
+        
+        // 执行登出操作
+        function performLogout() {
+            fetch('/api/auth/logout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    // 登出成功，重定向到登录页面
+                    window.location.href = '/login?logout';
+                } else {
+                    console.error('Logout failed');
+                    // 即使失败也重定向到登录页面
+                    window.location.href = '/login?logout';
+                }
+            })
+            .catch(error => {
+                console.error('Logout error:', error);
+                // 即使出错也重定向到登录页面
+                window.location.href = '/login?logout';
+            });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>任务和评论管理</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .task-card {
+            transition: transform 0.2s;
+        }
+        .task-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .comment-box {
+            border-left: 3px solid #007bff;
+        }
+        .deadline-badge {
+            font-size: 0.8em;
+        }
+        .overdue {
+            background-color: #dc3545 !important;
+            color: white;
+        }
+        .due-soon {
+            background-color: #ffc107 !important;
+            color: black;
+        }
+        .completed-task {
+            opacity: 0.7;
+        }
+        .completed-task .card-title {
+            text-decoration: line-through;
+        }
+        /* 新增样式：折叠的回复区域 */
+        .replies-container {
+            margin-top: 10px;
+            padding-left: 20px;
+            border-left: 2px dashed #dee2e6;
+        }
+        /* 新增样式：折叠按钮 */
+        .toggle-replies {
+            cursor: pointer;
+            color: #007bff;
+            font-size: 0.9em;
+        }
+        .toggle-replies:hover {
+            text-decoration: underline;
+        }
+        /* 新增样式：回复评论较小的字体 */
+        .reply-comment {
+            font-size: 0.9em;
+            padding: 8px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .reply-comment .comment-author {
+            font-weight: 500;
+        }
+        .reply-comment .comment-content {
+            margin: 5px 0;
+        }
+        .reply-comment .comment-actions {
+            font-size: 0.85em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container py-4">
+        <!-- 导航栏 -->
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="/"><i class="fas fa-code me-2"></i>Code Share Editor</a>
+                <div class="navbar-nav ms-auto">
+                    <a class="nav-link text-white" href="/"><i class="fas fa-home me-1"></i>首页</a>
+                    <!-- 返回文档编辑器的链接将通过JavaScript动态添加 -->
+                    <!-- 添加一个默认的返回链接，以防JavaScript失效 -->
+                    <a class="nav-link text-white" id="back-to-editor-link" style="display: none;" href="#">
+                        <i class="fas fa-arrow-left me-1"></i>返回文档
+                    </a>
+                </div>
+            </div>
+        </nav>
+
+        <div class="row">
+            <!-- 左侧：任务管理 -->
+            <div class="col-md-6">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="fas fa-tasks me-2"></i>任务管理</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- 创建任务表单 -->
+                        <form id="taskForm" class="mb-4">
+                            <div class="mb-3">
+                                <label for="taskTitle" class="form-label">任务标题</label>
+                                <input type="text" class="form-control" id="taskTitle" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="taskDescription" class="form-label">任务描述</label>
+                                <textarea class="form-control" id="taskDescription" rows="3"></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label for="taskDeadline" class="form-label">截止日期</label>
+                                <input type="datetime-local" class="form-control" id="taskDeadline" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="taskAssignee" class="form-label">分配给</label>
+                                <input type="text" class="form-control" id="taskAssignee" placeholder="输入用户名">
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="fas fa-plus-circle me-2"></i>创建任务
+                            </button>
+                        </form>
+
+                        <hr>
+
+                        <!-- 任务列表 -->
+                        <h6><i class="fas fa-list-check me-2"></i>任务列表</h6>
+                        <div id="taskList">
+                            <!-- 任务将通过JavaScript动态添加 -->
+                            <div class="alert alert-info text-center">
+                                <i class="fas fa-info-circle me-2"></i>暂无任务
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：评论系统 -->
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="fas fa-comments me-2"></i>文档评论</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- 发布评论表单 -->
+                        <form id="commentForm" class="mb-4">
+                            <div class="mb-3">
+                                <label for="commentContent" class="form-label">发表评论</label>
+                                <textarea class="form-control" id="commentContent" rows="3" placeholder="输入您的评论..." required></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-success w-100">
+                                <i class="fas fa-paper-plane me-2"></i>发布评论
+                            </button>
+                        </form>
+
+                        <hr>
+
+                        <!-- 评论列表 -->
+                        <h6><i class="fas fa-comment-dots me-2"></i>评论列表</h6>
+                        <div id="commentList">
+                            <!-- 评论将通过JavaScript动态添加 -->
+                            <div class="alert alert-info text-center">
+                                <i class="fas fa-info-circle me-2"></i>暂无评论
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- 添加 SockJS 和 STOMP 库 -->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2/lib/stomp.min.js"></script>
+    <!-- 添加 WebSocket 管理器 -->
+    <script src="/js/websocket-manager.js"></script>
+    
+    <script>
+        // 示例数据（在实际应用中，这些数据应该从服务器获取）
+        let tasks = [];
+        let comments = [];
+        let taskIdCounter = 1;
+        let commentIdCounter = 1;
+        let currentUsername = "当前用户"; // 默认用户名
+        let currentDocId = null; // 当前文档ID
+
+        // DOM元素
+        const taskForm = document.getElementById('taskForm');
+        const commentForm = document.getElementById('commentForm');
+        const taskList = document.getElementById('taskList');
+        const commentList = document.getElementById('commentList');
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 从URL参数中获取用户名和文档ID
+            const urlParams = new URLSearchParams(window.location.search);
+            const username = urlParams.get('username');
+            const docId = urlParams.get('docId');
+            
+            if (username) {
+                currentUsername = decodeURIComponent(username);
+            }
+            
+            if (docId) {
+                currentDocId = docId;
+            }
+            
+            // 设置默认截止日期为明天
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            tomorrow.setHours(18, 0, 0, 0);
+            document.getElementById('taskDeadline').value = formatDateForInput(tomorrow);
+            
+            // 从后端加载数据
+            loadTasks();
+            loadComments();
+            
+            // 初始化 WebSocket 连接
+            initWebSocket();
+            
+            // 添加返回文档编辑器的链接
+            addBackToEditorLink();
+        });
+
+        // 添加返回文档编辑器的链接
+        function addBackToEditorLink() {
+            // 从URL参数中获取文档ID
+            const urlParams = new URLSearchParams(window.location.search);
+            const docId = urlParams.get('docId');
+            
+            // 如果存在文档ID，则显示返回链接
+            if (docId) {
+                const backLink = document.getElementById('back-to-editor-link');
+                if (backLink) {
+                    backLink.href = `/editor/${docId}`;
+                    backLink.style.display = 'block';
+                }
+            }
+        }
+
+        // 格式化日期用于datetime-local输入框
+        function formatDateForInput(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+
+        // 初始化 WebSocket 连接
+        function initWebSocket() {
+            // 连接到 WebSocket 服务器
+            webSocketManager.connect()
+                .then(() => {
+                    console.log('WebSocket connected successfully');
+                    
+                    // 订阅公共通知主题
+                    webSocketManager.subscribe('/topic/public', function(notification) {
+                        showNotification(notification);
+                    });
+                    
+                    // 订阅私聊通知主题
+                    webSocketManager.subscribe('/user/queue/messages', function(notification) {
+                        showNotification(notification);
+                    });
+                })
+                .catch(error => {
+                    console.error('Failed to connect to WebSocket:', error);
+                    showToast('无法连接到通知服务器');
+                });
+        }
+
+        // 处理通知
+        function showNotification(notification) {
+            console.log('Received notification:', notification);
+            
+            // 根据通知类型处理
+            switch(notification.type) {
+                case 'task':
+                    // 重新加载任务列表
+                    loadTasks();
+                    showToast('任务列表已更新');
+                    break;
+                case 'comment':
+                    // 重新加载评论列表
+                    loadComments();
+                    // 显示通知
+                    showCommentNotification(notification);
+                    break;
+                default:
+                    console.log('Unknown notification type:', notification.type);
+            }
+        }
+
+        // 显示评论通知
+        function showCommentNotification(notification) {
+            let message = '';
+            
+            switch(notification.action) {
+                case 'create':
+                    if (notification.data && notification.data.content) {
+                        message = `${notification.data.author} 发表了新评论`;
+                    } else {
+                        message = '您有一条新评论';
+                    }
+                    break;
+                case 'like':
+                    if (notification.data && notification.data === currentUsername) {
+                        message = `${notification.sender} 点赞了您的评论`;
+                    } else {
+                        // 不显示不是点赞自己评论的通知
+                        return;
+                    }
+                    break;
+                default:
+                    message = '您有一条评论';
+            }
+            
+            showToast(message);
+        }
+        
+        // 发送通知
+        function sendNotification(notification) {
+            // 发送到公共主题
+            webSocketManager.sendMessage('/app/notification', notification);
+        }
+
+        // 创建任务的API调用
+        async function createTask(taskData) {
+            try {
+                const response = await fetch('/api/tasks', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(taskData)
+                });
+                
+                if (response.ok) {
+                    const createdTask = await response.json();
+                    // 将新创建的任务添加到任务数组
+                    tasks.push(createdTask);
+                    // 重新渲染任务列表
+                    renderTasks();
+                    // 重置表单
+                    taskForm.reset();
+                    // 设置默认截止日期为明天
+                    const tomorrow = new Date();
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    tomorrow.setHours(18, 0, 0, 0);
+                    document.getElementById('taskDeadline').value = formatDateForInput(tomorrow);
+                    showToast('任务创建成功！');
+                    
+                    // 发送通知
+                    sendNotification({
+                        type: 'task',
+                        action: 'create',
+                        data: createdTask,
+                        sender: currentUsername
+                    });
+                } else {
+                    const errorText = await response.text();
+                    showToast('创建任务失败: ' + errorText);
+                }
+            } catch (error) {
+                console.error('Error creating task:', error);
+                showToast('创建任务时发生错误');
+            }
+        }
+
+        // 删除任务的API调用
+        async function removeTask(taskId) {
+            try {
+                const response = await fetch(`/api/tasks/${taskId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    // 从任务数组中移除已删除的任务
+                    tasks = tasks.filter(t => t.id !== taskId);
+                    // 重新渲染任务列表
+                    renderTasks();
+                    showToast('任务删除成功！');
+                } else {
+                    const errorText = await response.text();
+                    showToast('删除任务失败: ' + errorText);
+                }
+            } catch (error) {
+                console.error('Error removing task:', error);
+                showToast('删除任务时发生错误');
+            }
+        }
+
+        // 加载示例数据
+        function loadSampleData() {
+            // 不再加载示例数据
+            // 示例数据已移除，实际应用中应从服务器获取数据
+        }
+
+        // 从后端加载任务数据
+        async function loadTasks() {
+            if (!currentDocId) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/tasks/document/${currentDocId}`);
+                if (response.ok) {
+                    tasks = await response.json();
+                    renderTasks();
+                } else {
+                    console.error('Failed to load tasks');
+                }
+            } catch (error) {
+                console.error('Error loading tasks:', error);
+            }
+        }
+
+        // 从后端加载评论数据
+        async function loadComments() {
+            if (!currentDocId) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/comments/document/${currentDocId}`);
+                if (response.ok) {
+                    comments = await response.json();
+                    renderComments();
+                } else {
+                    console.error('Failed to load comments');
+                }
+            } catch (error) {
+                console.error('Error loading comments:', error);
+            }
+        }
+
+        // 任务表单提交事件
+        taskForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const title = document.getElementById('taskTitle').value;
+            const description = document.getElementById('taskDescription').value;
+            const deadline = document.getElementById('taskDeadline').value;
+            const assignee = document.getElementById('taskAssignee').value;
+            
+            // 创建新任务对象
+            const newTask = {
+                title: title,
+                description: description,
+                deadline: new Date(deadline).toISOString(),
+                assignee: assignee,
+                createdBy: currentUsername,  // 添加创建者信息
+                documentId: currentDocId     // 添加文档ID信息
+            };
+            
+            // 调用后端API创建任务
+            createTask(newTask);
+        });
+
+        // 评论表单提交事件
+        commentForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const content = document.getElementById('commentContent').value;
+            const replyTo = document.getElementById('commentContent').dataset.replyTo;
+            
+            // 创建新评论对象
+            const newComment = {
+                content: content,
+                author: currentUsername,  // 使用从URL获取的用户名
+                documentId: currentDocId  // 添加文档ID信息
+            };
+            
+            // 如果是回复评论，添加父评论ID
+            if (replyTo) {
+                newComment.parentCommentId = parseInt(replyTo);
+            }
+            
+            // 调用后端API创建评论
+            createComment(newComment);
+        });
+
+        // 创建评论的API调用
+        async function createComment(commentData) {
+            try {
+                const response = await fetch('/api/comments', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(commentData)
+                });
+                
+                if (response.ok) {
+                    const createdComment = await response.json();
+                    // 将新创建的评论添加到评论数组的开头
+                    comments.unshift(createdComment);
+                    // 重新渲染评论列表
+                    renderComments();
+                    // 重置表单
+                    commentForm.reset();
+                    // 重置回复状态
+                    const commentContent = document.getElementById('commentContent');
+                    delete commentContent.dataset.replyTo;
+                    commentContent.placeholder = '输入您的评论...';
+                    showToast('评论发表成功！');
+                    
+                    // 发送通知
+                    sendNotification({
+                        type: 'comment',
+                        action: 'create',
+                        data: createdComment,
+                        sender: currentUsername
+                    });
+                } else {
+                    const errorText = await response.text();
+                    showToast('发表评论失败: ' + errorText);
+                }
+            } catch (error) {
+                console.error('Error creating comment:', error);
+                showToast('发表评论时发生错误');
+            }
+        }
+
+        // 渲染任务列表
+        function renderTasks() {
+            if (tasks.length === 0) {
+                taskList.innerHTML = '<div class="alert alert-info text-center"><i class="fas fa-info-circle me-2"></i>暂无任务</div>';
+                return;
+            }
+            
+            // 按创建时间排序（最新的在前面）
+            tasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            
+            let taskHtml = '';
+            tasks.forEach(task => {
+                const deadlineDate = new Date(task.deadline);
+                const now = new Date();
+                const timeDiff = deadlineDate - now;
+                const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+                
+                // 确定截止日期样式
+                let deadlineClass = '';
+                let deadlineText = deadlineDate.toLocaleString('zh-CN');
+                
+                if (task.completed) {
+                    deadlineClass = 'bg-success text-white';
+                    deadlineText += ' (已完成)';
+                } else if (timeDiff < 0) {
+                    deadlineClass = 'overdue';
+                    deadlineText += ' (已过期)';
+                } else if (daysDiff <= 1) {
+                    deadlineClass = 'due-soon';
+                    deadlineText += ' (即将到期)';
+                }
+                
+                taskHtml += `
+                <div class="card task-card mb-3 ${task.completed ? 'completed-task' : ''}" id="task-${task.id}">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <h6 class="card-title">${task.title}</h6>
+                            <div>
+                                <button class="btn btn-sm btn-outline-primary me-1" onclick="toggleTaskStatus(${task.id})">
+                                    <i class="fas fa-${task.completed ? 'undo' : 'check'}"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteTask(${task.id})">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="card-text">${task.description || '无描述'}</p>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="badge ${deadlineClass} deadline-badge">${deadlineText}</span>
+                            <small class="text-muted">
+                                ${task.assignee ? `<i class="fas fa-user me-1"></i>${task.assignee}` : ''}
+                                ${task.createdBy ? `<i class="fas fa-user-edit ms-2 me-1"></i>${task.createdBy}` : ''} <!-- 显示创建者 -->
+                            </small>
+                        </div>
+                        ${task.documentId ? `<small class="text-muted d-block mt-1"><i class="fas fa-file me-1"></i>文档ID: ${task.documentId.substring(0, 8)}</small>` : ''} <!-- 显示文档ID -->
+                    </div>
+                </div>
+                `;
+            });
+            
+            taskList.innerHTML = taskHtml;
+        }
+
+        // 渲染评论列表
+        function renderComments() {
+            if (comments.length === 0) {
+                commentList.innerHTML = '<div class="alert alert-info text-center"><i class="fas fa-info-circle me-2"></i>暂无评论</div>';
+                return;
+            }
+            
+            // 分离主评论和回复评论
+            const parentComments = comments.filter(comment => !comment.parentCommentId);
+            const replyComments = comments.filter(comment => comment.parentCommentId);
+            
+            // 按创建时间排序（最新的在前面）
+            parentComments.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            
+            let commentHtml = '';
+            parentComments.forEach(comment => {
+                const commentDate = new Date(comment.createdAt);
+                const now = new Date();
+                const timeDiff = now - commentDate;
+                const minutesDiff = Math.floor(timeDiff / (1000 * 60));
+                const hoursDiff = Math.floor(timeDiff / (1000 * 60 * 60));
+                const daysDiff = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+                
+                // 格式化时间显示
+                let timeText = '';
+                if (minutesDiff < 1) {
+                    timeText = '刚刚';
+                } else if (minutesDiff < 60) {
+                    timeText = `${minutesDiff}分钟前`;
+                } else if (hoursDiff < 24) {
+                    timeText = `${hoursDiff}小时前`;
+                } else {
+                    timeText = `${daysDiff}天前`;
+                }
+                
+                // 查找该评论的回复
+                const replies = replyComments.filter(reply => reply.parentCommentId === comment.id);
+                const hasReplies = replies.length > 0;
+                
+                // 检查当前用户是否已经点赞该评论
+                const hasLiked = comment.likedUsers && comment.likedUsers.includes(currentUsername);
+                const likeButtonClass = hasLiked ? 'btn-primary' : 'btn-outline-secondary';
+                const likeIconClass = hasLiked ? 'fas fa-thumbs-up' : 'far fa-thumbs-up';
+                
+                commentHtml += `
+                <div class="comment-box ps-3 mb-3" id="comment-${comment.id}">
+                    <div class="d-flex justify-content-between">
+                        <strong>${comment.author}</strong>
+                        <small class="text-muted">${timeText}</small>
+                    </div>
+                    <p class="mb-1">${comment.content}</p>
+                    <div class="d-flex">
+                        <button class="btn btn-sm ${likeButtonClass} me-2" onclick="toggleCommentLike(${comment.id})">
+                            <i class="${likeIconClass} me-1"></i>点赞
+                            ${comment.likeCount > 0 ? `<span class="badge bg-secondary">${comment.likeCount}</span>` : ''}
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="replyToComment(${comment.id})">
+                            <i class="fas fa-reply me-1"></i>回复
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger ms-2" onclick="deleteComment(${comment.id})">
+                            <i class="fas fa-trash me-1"></i>删除
+                        </button>
+                    </div>
+                    ${comment.documentId ? `<small class="text-muted d-block mt-1"><i class="fas fa-file me-1"></i>文档ID: ${comment.documentId.substring(0, 8)}</small>` : ''} <!-- 显示文档ID -->
+                    
+                    <!-- 回复区域 -->
+                    ${hasReplies ? `
+                    <div class="mt-2">
+                        <span class="toggle-replies" onclick="toggleReplies(${comment.id})">
+                            <i class="fas fa-chevron-down me-1"></i>展开${replies.length}条回复
+                        </span>
+                        <div id="replies-${comment.id}" class="replies-container" style="display: none;">
+                            ${renderReplies(replies)}
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+                `;
+            });
+            
+            commentList.innerHTML = commentHtml;
+        }
+        
+        // 渲染回复评论
+        function renderReplies(replies) {
+            // 按创建时间排序（最早的在前面）
+            replies.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+            
+            let repliesHtml = '';
+            replies.forEach(reply => {
+                const replyDate = new Date(reply.createdAt);
+                const now = new Date();
+                const timeDiff = now - replyDate;
+                const minutesDiff = Math.floor(timeDiff / (1000 * 60));
+                const hoursDiff = Math.floor(timeDiff / (1000 * 60 * 60));
+                const daysDiff = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+                
+                // 格式化时间显示
+                let timeText = '';
+                if (minutesDiff < 1) {
+                    timeText = '刚刚';
+                } else if (minutesDiff < 60) {
+                    timeText = `${minutesDiff}分钟前`;
+                } else if (hoursDiff < 24) {
+                    timeText = `${hoursDiff}小时前`;
+                } else {
+                    timeText = `${daysDiff}天前`;
+                }
+                
+                // 检查当前用户是否已经点赞该评论
+                const hasLiked = reply.likedUsers && reply.likedUsers.includes(currentUsername);
+                const likeButtonClass = hasLiked ? 'btn-primary' : 'btn-outline-secondary';
+                const likeIconClass = hasLiked ? 'fas fa-thumbs-up' : 'far fa-thumbs-up';
+                
+                repliesHtml += `
+                <div class="reply-comment mb-2">
+                    <div class="d-flex justify-content-between">
+                        <span class="comment-author">${reply.author}</span>
+                        <small class="text-muted">${timeText}</small>
+                    </div>
+                    <div class="comment-content">${reply.content}</div>
+                    <div class="comment-actions d-flex">
+                        <button class="btn btn-sm ${likeButtonClass} me-2" onclick="toggleCommentLike(${reply.id})">
+                            <i class="${likeIconClass} me-1"></i>点赞
+                            ${reply.likeCount > 0 ? `<span class="badge bg-secondary">${reply.likeCount}</span>` : ''}
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="replyToComment(${reply.id})">
+                            <i class="fas fa-reply me-1"></i>回复
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger ms-2" onclick="deleteComment(${reply.id})">
+                            <i class="fas fa-trash me-1"></i>删除
+                        </button>
+                    </div>
+                </div>
+                `;
+            });
+            
+            return repliesHtml;
+        }
+        
+        // 切换回复显示/隐藏
+        function toggleReplies(commentId) {
+            const repliesContainer = document.getElementById(`replies-${commentId}`);
+            const toggleButton = repliesContainer.previousElementSibling;
+            
+            if (repliesContainer.style.display === 'none') {
+                repliesContainer.style.display = 'block';
+                toggleButton.innerHTML = '<i class="fas fa-chevron-up me-1"></i>收起回复';
+            } else {
+                repliesContainer.style.display = 'none';
+                toggleButton.innerHTML = '<i class="fas fa-chevron-down me-1"></i>展开回复';
+            }
+        }
+
+        // 删除评论
+        function deleteComment(commentId) {
+            if (confirm('确定要删除这条评论吗？')) {
+                // 调用后端API删除评论
+                removeComment(commentId);
+            }
+        }
+
+        // 删除评论的API调用
+        async function removeComment(commentId) {
+            try {
+                const response = await fetch(`/api/comments/${commentId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    // 从评论数组中移除已删除的评论
+                    comments = comments.filter(c => c.id !== commentId);
+                    // 重新渲染评论列表
+                    renderComments();
+                    showToast('评论删除成功！');
+                } else {
+                    const errorText = await response.text();
+                    showToast('删除评论失败: ' + errorText);
+                }
+            } catch (error) {
+                console.error('Error removing comment:', error);
+                showToast('删除评论时发生错误');
+            }
+        }
+
+        // 给评论点赞的API调用
+        async function likeComment(commentId) {
+            try {
+                const response = await fetch(`/api/comments/${commentId}/like`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const updatedComment = await response.json();
+                    // 更新本地评论数组中的评论
+                    const commentIndex = comments.findIndex(c => c.id === commentId);
+                    if (commentIndex !== -1) {
+                        comments[commentIndex] = updatedComment;
+                    }
+                    // 重新渲染评论列表
+                    renderComments();
+                    showToast('点赞成功！');
+                    
+                    // 发送通知
+                    sendNotification({
+                        type: 'comment',
+                        action: 'like',
+                        data: updatedComment,
+                        sender: currentUsername
+                    });
+                } else {
+                    const errorText = await response.text();
+                    // 如果用户已经点赞，则显示相应的提示
+                    if (errorText.includes('User has already liked this comment')) {
+                        showToast('您已经点赞过此评论！');
+                    } else {
+                        showToast('点赞失败: ' + errorText);
+                    }
+                }
+            } catch (error) {
+                console.error('Error liking comment:', error);
+                showToast('点赞时发生错误');
+            }
+        }
+        
+        // 取消评论点赞的API调用
+        async function unlikeComment(commentId) {
+            try {
+                const response = await fetch(`/api/comments/${commentId}/unlike`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const updatedComment = await response.json();
+                    // 更新本地评论数组中的评论
+                    const commentIndex = comments.findIndex(c => c.id === commentId);
+                    if (commentIndex !== -1) {
+                        comments[commentIndex] = updatedComment;
+                    }
+                    // 重新渲染评论列表
+                    renderComments();
+                    showToast('取消点赞成功！');
+                } else {
+                    const errorText = await response.text();
+                    // 如果用户未点赞，则显示相应的提示
+                    if (errorText.includes('User has not liked this comment')) {
+                        showToast('您尚未点赞此评论！');
+                    } else {
+                        showToast('取消点赞失败: ' + errorText);
+                    }
+                }
+            } catch (error) {
+                console.error('Error unliking comment:', error);
+                showToast('取消点赞时发生错误');
+            }
+        }
+        
+        // 切换评论点赞状态
+        function toggleCommentLike(commentId) {
+            // 查找评论
+            const comment = comments.find(c => c.id === commentId);
+            if (!comment) {
+                showToast('评论未找到');
+                return;
+            }
+            
+            // 检查当前用户是否已经点赞
+            const hasLiked = comment.likedUsers && comment.likedUsers.includes(currentUsername);
+            
+            if (hasLiked) {
+                // 如果已经点赞，则取消点赞
+                unlikeComment(commentId);
+            } else {
+                // 如果未点赞，则点赞
+                likeComment(commentId);
+            }
+        }
+        
+        // 回复评论
+        function replyToComment(commentId) {
+            // 设置表单为回复模式
+            const commentContent = document.getElementById('commentContent');
+            commentContent.placeholder = '回复评论...';
+            
+            // 存储要回复的评论ID
+            commentContent.dataset.replyTo = commentId;
+            
+            // 聚焦到评论框
+            commentContent.focus();
+            
+            // 可以在这里添加更多UI提示，比如显示正在回复哪条评论
+            showToast('正在回复评论，请输入您的回复内容');
+        }
+
+        // 切换任务完成状态
+        function toggleTaskStatus(taskId) {
+            const task = tasks.find(t => t.id === taskId);
+            if (task) {
+                // 调用后端API更新任务状态
+                updateTaskStatus(taskId, !task.completed);
+            }
+        }
+
+        // 更新任务状态的API调用
+        async function updateTaskStatus(taskId, completed) {
+            try {
+                const response = await fetch(`/api/tasks/${taskId}/status`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ completed: completed })
+                });
+                
+                if (response.ok) {
+                    const updatedTask = await response.json();
+                    // 更新本地任务数组中的任务状态
+                    const taskIndex = tasks.findIndex(t => t.id === taskId);
+                    if (taskIndex !== -1) {
+                        tasks[taskIndex] = updatedTask;
+                    }
+                    // 重新渲染任务列表
+                    renderTasks();
+                    showToast(completed ? '任务标记为已完成！' : '任务标记为未完成！');
+                } else {
+                    const errorText = await response.text();
+                    showToast('更新任务状态失败: ' + errorText);
+                }
+            } catch (error) {
+                console.error('Error updating task status:', error);
+                showToast('更新任务状态时发生错误');
+            }
+        }
+
+        // 删除任务
+        function deleteTask(taskId) {
+            if (confirm('确定要删除这个任务吗？')) {
+                // 调用后端API删除任务
+                removeTask(taskId);
+            }
+        }
+
+        // 显示toast消息
+        function showToast(message) {
+            // 创建toast容器（如果不存在）
+            let toastContainer = document.getElementById('toast-container');
+            if (!toastContainer) {
+                toastContainer = document.createElement('div');
+                toastContainer.id = 'toast-container';
+                toastContainer.style.position = 'fixed';
+                toastContainer.style.bottom = '20px';
+                toastContainer.style.right = '20px';
+                toastContainer.style.zIndex = '10000';
+                document.body.appendChild(toastContainer);
+            }
+            
+            // 创建toast元素
+            const toast = document.createElement('div');
+            toast.className = 'alert alert-info alert-dismissible fade show';
+            toast.role = 'alert';
+            toast.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            `;
+            
+            // 添加到容器
+            toastContainer.appendChild(toast);
+            
+            // 3秒后自动移除
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Operation Logs</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" th:href="@{/style.css}">
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">📝 Code Share</a>
+        <div class="navbar-nav ms-auto">
+            <div class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <img th:if="${currentUser.avatarUrl}" th:src="${currentUser.avatarUrl}" alt="Avatar" class="rounded-circle me-2" width="32" height="32">
+                    <img th:unless="${currentUser.avatarUrl}" src="/images/default-avatar.png" alt="Avatar" class="rounded-circle me-2" width="32" height="32">
+                    <span th:text="${currentUser.username}">User</span>
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
+                    <li><a class="dropdown-item" th:href="@{/profile}">👤 Profile</a></li>
+                    <li>
+                        <form th:action="@{/logout}" method="post" class="m-0">
+                            <button type="submit" class="dropdown-item">🚪 Logout</button>
+                        </form>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>📝 Operation Logs</h1>
+        <a href="/" class="btn btn-secondary">← Back to Dashboard</a>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Your Activity Logs</h5>
+                </div>
+                <div class="card-body">
+                    <div th:if="${logs.empty}" class="alert alert-info">
+                        No operation logs found.
+                    </div>
+                    
+                    <div th:unless="${logs.empty}">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Timestamp</th>
+                                        <th scope="col">Action</th>
+                                        <th scope="col">Details</th>
+                                        <th scope="col">Document</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr th:each="log : ${logs}">
+                                        <td th:text="${#temporals.format(log.createdAt, 'yyyy-MM-dd HH:mm:ss')}">Timestamp</td>
+                                        <td>
+                                            <span th:switch="${log.action}">
+                                                <span th:case="'CREATE'" class="badge bg-success">Create</span>
+                                                <span th:case="'UPDATE'" class="badge bg-primary">Update</span>
+                                                <span th:case="'DELETE'" class="badge bg-danger">Delete</span>
+                                                <span th:case="'READ'" class="badge bg-info">Read</span>
+                                                <span th:case="'SHARE'" class="badge bg-warning">Share</span>
+                                                <span th:case="'LOGIN'" class="badge bg-secondary">Login</span>
+                                                <span th:case="'LOGOUT'" class="badge bg-secondary">Logout</span>
+                                                <span th:case="*" class="badge bg-light text-dark" th:text="${log.action}">Action</span>
+                                            </span>
+                                        </td>
+                                        <td th:text="${log.description}">Details</td>
+                                        <td>
+                                            <span th:if="${log.documentId}" th:text="${log.documentId}">-</span>
+                                            <span th:unless="${log.documentId}">-</span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script th:inline="javascript">
+    document.addEventListener('DOMContentLoaded', function() {
+        // 初始化 Bootstrap 组件
+        var dropdownElementList = [].slice.call(document.querySelectorAll('[data-bs-toggle="dropdown"]'));
+        dropdownElementList.map(function(dropdownToggleEl) {
+            return new bootstrap.Dropdown(dropdownToggleEl);
+        });
+    });
+</script>
+</body>
+</html>

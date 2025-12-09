@@ -1,0 +1,15 @@
+{
+  "name": "ws-text-editor",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start-yjs": "node ./node_modules/y-websocket/bin/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "y-websocket": "^1.5.4"
+  }
+}
