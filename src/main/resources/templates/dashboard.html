@@ -94,6 +94,19 @@
                     <button id="clearTagFilter" class="btn btn-sm btn-outline-secondary">清除筛选</button>
                 </div>
             </div>
+            
+            <!-- 添加文档内容搜索框 -->
+            <div class="row mb-3">
+                <div class="col-md-12">
+                    <h5>按内容搜索:</h5>
+                    <div class="input-group">
+                        <input type="text" id="contentSearchInput" class="form-control" placeholder="输入关键字搜索文档内容...">
+                        <button id="contentSearchBtn" class="btn btn-primary">搜索</button>
+                        <button id="clearContentSearchBtn" class="btn btn-outline-secondary">清除</button>
+                    </div>
+                </div>
+            </div>
+            
             <!-- 文档列表 -->
             <div th:unless="${documents.empty}" class="row row-cols-1 row-cols-md-2 g-4">
                 <div th:each="doc : ${documents}" class="col">
@@ -264,6 +277,41 @@
             // 如果页面加载时有标签筛选参数，设置搜索框的值
             // 通过Thymeleaf设置搜索框的值
         }
+        
+        // 添加内容搜索功能
+        const contentSearchBtn = document.getElementById('contentSearchBtn');
+        const contentSearchInput = document.getElementById('contentSearchInput');
+        const clearContentSearchBtn = document.getElementById('clearContentSearchBtn');
+        
+        if (contentSearchBtn && contentSearchInput) {
+            contentSearchBtn.addEventListener('click', function() {
+                const keyword = contentSearchInput.value.trim();
+                if (keyword) {
+                    searchDocumentsByContent(keyword);
+                }
+            });
+            
+            // 支持回车键搜索
+            contentSearchInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    const keyword = contentSearchInput.value.trim();
+                    if (keyword) {
+                        searchDocumentsByContent(keyword);
+                    }
+                }
+            });
+        }
+        
+        if (clearContentSearchBtn) {
+            clearContentSearchBtn.addEventListener('click', function() {
+                contentSearchInput.value = '';
+                // 重新加载页面显示所有文档
+                window.location.href = '/';
+            });
+        }
+        
+        // 绑定初始文档卡片事件
+        bindDocumentCardEvents();
     });
 
     // 添加标签按钮事件监听器
@@ -357,6 +405,77 @@
         // 重新加载页面，不带标签参数
         window.location.href = '/';
     });
+    
+    // 删除文档功能
+    document.querySelectorAll('.delete-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const docId = this.getAttribute('data-doc-id');
+            const docTitle = this.getAttribute('data-doc-title');
+
+            // 确认对话框
+            if (confirm(`Are you sure you want to delete the document "${docTitle}"? This action cannot be undone.`)) {
+                // 发送删除请求
+                fetch(`/documents/delete/${docId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                    .then(response => {
+                        if (response.ok) {
+                            // 重新加载页面以反映更改
+                            window.location.reload();
+                            showToast(`Document "${docTitle}" deleted successfully!`, 'success');
+                        } else {
+                            showToast(`Failed to delete document "${docTitle}"!`, 'danger');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showToast(`Error deleting document "${docTitle}"!`, 'danger');
+                    });
+            }
+        });
+    });
+
+    // 编辑文档标题功能
+    document.querySelectorAll('.edit-title-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const docId = this.getAttribute('data-doc-id');
+            const currentTitle = this.getAttribute('data-doc-title');
+
+            // 提示用户输入新标题
+            const newTitle = prompt('Enter new title for the document:', currentTitle);
+
+            // 如果用户没有取消并且输入了新标题
+            if (newTitle !== null && newTitle.trim() !== '' && newTitle !== currentTitle) {
+                // 发送更新标题请求
+                fetch(`/documents/update-title/${docId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({ title: newTitle.trim() })
+                })
+                    .then(response => {
+                        if (response.ok) {
+                            // 重新加载页面以反映更改
+                            window.location.reload();
+                            showToast(`Document title updated to "${newTitle}"!`, 'success');
+                        } else {
+                            showToast(`Failed to update document title!`, 'danger');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showToast(`Error updating document title!`, 'danger');
+                    });
+            }
+        });
+    });
+
     // 兼容性复制方案 (execCommand)
     function fallbackCopyText(text, title) {
         const textArea = document.createElement("textarea");
@@ -459,9 +578,267 @@
             window.location.href = '/';
         }
     }
-
-
-
+    
+    // 根据文档内容搜索文档
+    function searchDocumentsByContent(keyword) {
+        // 显示加载提示
+        showToast('正在搜索文档...', 'info');
+        
+        // 发送搜索请求到现有的API端点
+        fetch(`/api/search/documents?keyword=${encodeURIComponent(keyword)}`)
+            .then(response => response.json())
+            .then(results => {
+                // 隐藏之前的toast
+                hideAllToasts();
+                
+                if (results.length > 0) {
+                    showToast(`找到 ${results.length} 个匹配的文档`, 'success');
+                    // 更新文档列表显示搜索结果
+                    updateDocumentListWithSearchResults(results);
+                } else {
+                    showToast('未找到匹配的文档', 'info');
+                    // 清空文档列表
+                    clearDocumentList();
+                }
+            })
+            .catch(error => {
+                console.error('Search error:', error);
+                hideAllToasts();
+                showToast('搜索过程中发生错误', 'danger');
+            });
+    }
+    
+    // 更新文档列表显示搜索结果
+    function updateDocumentListWithSearchResults(results) {
+        const documentListContainer = document.querySelector('.row.row-cols-1.row-cols-md-2.g-4');
+        if (!documentListContainer) return;
+        
+        // 清空现有文档列表
+        documentListContainer.innerHTML = '';
+        
+        // 为每个搜索结果创建文档卡片
+        results.forEach(doc => {
+            const colDiv = document.createElement('div');
+            colDiv.className = 'col';
+            
+            const cardDiv = document.createElement('div');
+            cardDiv.className = 'card h-100 document-card';
+            
+            const cardBody = document.createElement('div');
+            cardBody.className = 'card-body';
+            
+            const title = document.createElement('h5');
+            title.className = 'card-title';
+            title.textContent = doc.title || 'Untitled Document';
+            
+            // DocumentSearchEntity没有tags字段，所以我们不显示标签
+            
+            const ownerDiv = document.createElement('div');
+            ownerDiv.className = 'mb-2';
+            
+            const ownerSmall = document.createElement('small');
+            ownerSmall.className = 'text-muted';
+            ownerSmall.innerHTML = '<i class="fas fa-user"></i> Owner: ' + (doc.owner || 'Unknown');
+            ownerDiv.appendChild(ownerSmall);
+            
+            const timeP = document.createElement('p');
+            timeP.className = 'card-text text-muted';
+            
+            const timeSmall = document.createElement('small');
+            // 注意：这里使用的是Java后端返回的日期格式
+            timeSmall.innerHTML = `
+                Created: ${formatJavaDate(doc.createAt)}<br>
+                Updated: ${formatJavaDate(doc.updateAt)}
+            `;
+            timeP.appendChild(timeSmall);
+            
+            cardBody.appendChild(title);
+            cardBody.appendChild(ownerDiv);
+            cardBody.appendChild(timeP);
+            
+            const cardFooter = document.createElement('div');
+            cardFooter.className = 'card-footer';
+            
+            const editLink = document.createElement('a');
+            editLink.href = `/editor/${doc.uniqueId}`;
+            editLink.className = 'btn btn-primary btn-sm';
+            editLink.textContent = '✏️ Edit';
+            
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'btn btn-outline-secondary btn-sm copy-btn';
+            copyBtn.setAttribute('data-doc-id', doc.uniqueId);
+            copyBtn.setAttribute('data-doc-title', doc.title || 'Untitled Document');
+            copyBtn.textContent = '📋 Copy ID';
+            
+            // 对于搜索结果，我们不显示删除、重命名和添加标签按钮，因为用户可能没有权限执行这些操作
+            // 只显示编辑按钮，点击后会在编辑器页面检查权限
+            
+            cardFooter.appendChild(editLink);
+            cardFooter.appendChild(copyBtn);
+            
+            cardDiv.appendChild(cardBody);
+            cardDiv.appendChild(cardFooter);
+            
+            colDiv.appendChild(cardDiv);
+            documentListContainer.appendChild(colDiv);
+        });
+        
+        // 重新绑定按钮事件
+        bindDocumentCardEvents();
+    }
+    
+    // 清空文档列表
+    function clearDocumentList() {
+        const documentListContainer = document.querySelector('.row.row-cols-1.row-cols-md-2.g-4');
+        if (documentListContainer) {
+            documentListContainer.innerHTML = '<div class="col"><div class="alert alert-info">未找到匹配的文档</div></div>';
+        }
+    }
+    
+    // 格式化Java后端返回的日期显示
+    function formatJavaDate(dateString) {
+        if (!dateString) return 'Unknown';
+        // Java后端返回的日期格式通常是这样的："2023-12-01T10:30:00.000+00:00"
+        const date = new Date(dateString);
+        return date.toLocaleDateString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+    
+    // 隐藏所有toast消息
+    function hideAllToasts() {
+        const toastContainer = document.getElementById('toast-container');
+        if (toastContainer) {
+            const toasts = toastContainer.querySelectorAll('.toast');
+            toasts.forEach(toastEl => {
+                const toast = bootstrap.Toast.getInstance(toastEl);
+                if (toast) {
+                    toast.hide();
+                }
+            });
+        }
+    }
+    
+    // 重新绑定文档卡片上的按钮事件
+    function bindDocumentCardEvents() {
+        // 重新绑定复制按钮事件
+        document.querySelectorAll('.copy-btn').forEach(button => {
+            button.removeEventListener('click', handleCopyClick);
+            button.addEventListener('click', handleCopyClick);
+        });
+        
+        // 重新绑定删除按钮事件
+        document.querySelectorAll('.delete-btn').forEach(button => {
+            button.removeEventListener('click', handleDeleteClick);
+            button.addEventListener('click', handleDeleteClick);
+        });
+        
+        // 重新绑定重命名按钮事件
+        document.querySelectorAll('.edit-title-btn').forEach(button => {
+            button.removeEventListener('click', handleRenameClick);
+            button.addEventListener('click', handleRenameClick);
+        });
+        
+        // 重新绑定添加标签按钮事件
+        document.querySelectorAll('.add-tag-btn').forEach(button => {
+            button.removeEventListener('click', handleAddTagClick);
+            button.addEventListener('click', handleAddTagClick);
+        });
+    }
+    
+    // 处理复制按钮点击事件
+    function handleCopyClick(event) {
+        const docId = this.getAttribute('data-doc-id');
+        const docTitle = this.getAttribute('data-doc-title');
+        
+        // 优先尝试现代 Clipboard API
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(docId).then(() => {
+                showToast(`📋 Document ID for "${docTitle}" copied!`, 'success');
+            }).catch(err => {
+                console.error('Clipboard API failed, trying fallback...', err);
+                fallbackCopyText(docId, docTitle);
+            });
+        } else {
+            // 如果不支持（如非 HTTPS 环境），直接使用降级方案
+            fallbackCopyText(docId, docTitle);
+        }
+    }
+    
+    // 处理删除按钮点击事件
+    function handleDeleteClick(event) {
+        const docId = this.getAttribute('data-doc-id');
+        const docTitle = this.getAttribute('data-doc-title');
+        
+        if (confirm(`确定要删除文档"${docTitle}"吗？此操作无法撤销。`)) {
+            fetch(`/documents/delete/${docId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                    showToast(`文档"${docTitle}"删除成功！`, 'success');
+                } else {
+                    showToast(`删除文档"${docTitle}"失败！`, 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast(`删除文档"${docTitle}"时发生错误！`, 'danger');
+            });
+        }
+    }
+    
+    // 处理重命名按钮点击事件
+    function handleRenameClick(event) {
+        const docId = this.getAttribute('data-doc-id');
+        const currentTitle = this.getAttribute('data-doc-title');
+        
+        const newTitle = prompt('请输入文档的新标题：', currentTitle);
+        
+        if (newTitle !== null && newTitle.trim() !== '' && newTitle !== currentTitle) {
+            fetch(`/documents/update-title/${docId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ title: newTitle.trim() })
+            })
+            .then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                    showToast(`文档标题已更新为"${newTitle}"！`, 'success');
+                } else {
+                    showToast('更新文档标题失败！', 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('更新文档标题时发生错误！', 'danger');
+            });
+        }
+    }
+    
+    // 处理添加标签按钮点击事件
+    function handleAddTagClick(event) {
+        const docId = this.getAttribute('data-doc-id');
+        const docTitle = this.getAttribute('data-doc-title');
+        
+        document.getElementById('tagDocumentId').value = docId;
+        document.getElementById('tagInput').value = '';
+        
+        const modal = new bootstrap.Modal(document.getElementById('addTagModal'));
+        modal.show();
+    }
 
     // 显示 Toast 消息
     function showToast(message, type = 'info') {
@@ -581,3 +958,4 @@
 </script>
 </body>
 </html>
+}

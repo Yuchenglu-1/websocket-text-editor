@@ -56,6 +56,7 @@ public class DocumentsController {
      * @return 保存结果响应
      */
     @PostMapping("/save")
+    @Transactional(rollbackFor = Exception.class,propagation = Propagation.REQUIRES_NEW)
     public ResponseEntity<String> saveDocument(@RequestParam String documentId,
                                                @RequestParam String content,
                                                @RequestParam(required = false) String language,
@@ -126,6 +127,7 @@ public class DocumentsController {
         return ResponseEntity.ok("Document deleted successfully!");
     }
     @PostMapping("/update-title/{docId}")
+    @Transactional(rollbackFor = Exception.class,propagation = Propagation.REQUIRES_NEW)
     public ResponseEntity<String> updateDocumentTitle(@PathVariable String docId,
                                                      @RequestBody Map<String,String> tit,
                                                      @AuthenticationPrincipal UserDetails userDetails) {
@@ -158,6 +160,7 @@ public class DocumentsController {
      * @return 添加标签的结果响应
      */
     @PostMapping("/add-tags/{docId}")
+    @Transactional(rollbackFor = Exception.class,propagation = Propagation.REQUIRED)
     public ResponseEntity<String> addTagsToDocument(@PathVariable String docId,
                                                     @RequestBody Map<String, String> payload,
                                                     @AuthenticationPrincipal UserDetails userDetails) {

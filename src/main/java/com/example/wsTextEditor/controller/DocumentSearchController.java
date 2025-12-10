@@ -21,7 +21,7 @@ public class DocumentSearchController {
      * @return 匹配的文档列表
      */
     @GetMapping("/documents")
-    public ResponseEntity<List<DocumentSearchEntity>> searchDocuments(@RequestParam String keyword) {
+    public ResponseEntity<?> searchDocuments(@RequestParam String keyword) {
         List<DocumentSearchEntity> results = documentSearchService.searchByKeyword(keyword);
         return ResponseEntity.ok(results);
     }
@@ -32,7 +32,7 @@ public class DocumentSearchController {
      * @return 匹配的文档列表
      */
     @GetMapping("/documents/language")
-    public ResponseEntity<List<DocumentSearchEntity>> searchDocumentsByLanguage(@RequestParam String language) {
+    public ResponseEntity<?> searchDocumentsByLanguage(@RequestParam String language) {
         List<DocumentSearchEntity> results = documentSearchService.searchByLanguage(language);
         return ResponseEntity.ok(results);
     }
@@ -44,7 +44,7 @@ public class DocumentSearchController {
      * @return 匹配的文档列表
      */
     @GetMapping("/documents/keyword-language")
-    public ResponseEntity<List<DocumentSearchEntity>> searchDocumentsByKeywordAndLanguage(
+    public ResponseEntity<?> searchDocumentsByKeywordAndLanguage(
             @RequestParam String keyword,
             @RequestParam String language) {
         List<DocumentSearchEntity> results = documentSearchService.searchByKeywordAndLanguage(keyword, language);

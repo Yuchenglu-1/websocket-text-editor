@@ -25,6 +25,8 @@ public class DocumentSearchEntity {
     private Date createAt;
     @Field(type = FieldType.Date)
     private Date updateAt;
+    @Field(type = FieldType.Keyword)
+    private String owner;
     //定义set跟get函数
     public Long getId() {
         return id;
@@ -67,6 +69,12 @@ public class DocumentSearchEntity {
     }
     public void setUpdateAt(Date updateAt) {
         this.updateAt = updateAt;
+    }
+    public String getOwner() {
+        return owner;
+    }
+    public void setOwner(String owner) {
+        this.owner = owner;
     }
     //构造函数初始化更新时间
     public DocumentSearchEntity(){

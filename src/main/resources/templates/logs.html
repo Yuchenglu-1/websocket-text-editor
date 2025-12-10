@@ -34,7 +34,10 @@
 <div class="container-fluid mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1>📝 Operation Logs</h1>
-        <a href="/" class="btn btn-secondary">← Back to Dashboard</a>
+        <div>
+            <button id="clearLogsBtn" class="btn btn-danger me-2">🗑️ Clear Logs</button>
+            <a href="/" class="btn btn-secondary">← Back to Dashboard</a>
+        </div>
     </div>
 
     <div class="row">
@@ -98,7 +101,86 @@
         dropdownElementList.map(function(dropdownToggleEl) {
             return new bootstrap.Dropdown(dropdownToggleEl);
         });
+        
+        // 添加清空日志按钮的事件监听器
+        const clearLogsBtn = document.getElementById('clearLogsBtn');
+        if (clearLogsBtn) {
+            clearLogsBtn.addEventListener('click', function() {
+                if (confirm('确定要清空所有操作日志吗？此操作无法撤销。')) {
+                    // 发送清空日志请求
+                    fetch('/api/logs/clear', {
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    })
+                    .then(response => {
+                        if (response.ok) {
+                            // 清空日志表格
+                            const tbody = document.querySelector('tbody');
+                            if (tbody) {
+                                tbody.innerHTML = '<tr><td colspan="4" class="text-center">No operation logs found.</td></tr>';
+                            }
+                            
+                            // 显示成功消息
+                            showToast('日志已清空', 'success');
+                        } else {
+                            showToast('清空日志失败', 'danger');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showToast('清空日志时发生错误', 'danger');
+                    });
+                }
+            });
+        }
     });
+    
+    // 显示 Toast 消息
+    function showToast(message, type = 'info') {
+        // 创建 toast 容器（如果不存在）
+        let toastContainer = document.getElementById('toast-container');
+        if (!toastContainer) {
+            toastContainer = document.createElement('div');
+            toastContainer.id = 'toast-container';
+            toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+            toastContainer.style.zIndex = '1055';
+            document.body.appendChild(toastContainer);
+        }
+        
+        // 根据类型设置背景色
+        let bgClass = 'text-white bg-info';
+        if (type === 'danger') bgClass = 'text-white bg-danger';
+        if (type === 'success') bgClass = 'text-white bg-success';
+
+        const toastEl = document.createElement('div');
+        toastEl.className = `toast align-items-center border-0 ${bgClass}`;
+        toastEl.setAttribute('role', 'alert');
+        toastEl.setAttribute('aria-live', 'assertive');
+        toastEl.setAttribute('aria-atomic', 'true');
+
+        toastEl.innerHTML = `
+            <div class="d-flex">
+                <div class="toast-body">
+                    ${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        `;
+
+        toastContainer.appendChild(toastEl);
+
+        // 使用 Bootstrap 5 API 初始化
+        const toast = new bootstrap.Toast(toastEl, { delay: 3000 });
+        toast.show();
+
+        // 隐藏后从 DOM 移除
+        toastEl.addEventListener('hidden.bs.toast', function () {
+            toastEl.remove();
+        });
+    }
 </script>
 </body>
 </html>

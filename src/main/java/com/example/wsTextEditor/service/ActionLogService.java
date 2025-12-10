@@ -29,4 +29,5 @@ public class ActionLogService {
         log.setDocumentId(documentId);
         actionLogRepository.save(log);
     }
+
 }

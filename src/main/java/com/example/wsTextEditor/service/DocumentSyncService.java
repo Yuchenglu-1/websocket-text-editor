@@ -59,6 +59,8 @@ public class DocumentSyncService {
         entity.setUniqueId(document.getUniqueId());
         entity.setCreateAt(document.getCreatedAt());
         entity.setUpdateAt(document.getUpdatedAt());
+        entity.setOwner(document.getOwner().getUsername());
+        System.out.println("DocumentSearchEntity: " + entity);
         return entity;
     }
 }

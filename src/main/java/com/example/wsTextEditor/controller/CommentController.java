@@ -10,6 +10,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +53,7 @@ public class CommentController {
 
     // 删除评论
     @DeleteMapping("/{id}")
+    @Transactional(rollbackFor = Exception.class,propagation = Propagation.REQUIRES_NEW)
     public ResponseEntity<?> deleteComment(@PathVariable Long id,@AuthenticationPrincipal UserDetails userDetails) {
         try { String username=userDetails.getUsername();
             Comment comment=commentService.getCommentById(id)
