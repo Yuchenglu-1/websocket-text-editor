@@ -1,10 +1,18 @@
 server:
-  port: 9090
+  port: 8080
   servlet:
     encoding:
       charset: UTF-8
       enabled: true
       force: true
+
+# 日志配置
+logging:
+  file:
+    name: ./logs/spring.log
+  level:
+    root: INFO
+    com.example.wsTextEditor: DEBUG
 
 spring:
   application:
@@ -54,3 +62,9 @@ y:
 user:
   avatar:
     upload-dir: uploads/avatars/
+management:
+  endpoints:
+    web:
+      exposure:
+        # 暴露 prometheus 和 health 端点
+        include: prometheus,health

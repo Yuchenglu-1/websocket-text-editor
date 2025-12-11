@@ -30,10 +30,11 @@ public class SecurityConfig {
      */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        //放行一些特点功能还有静态资源
         http
             .authorizeHttpRequests(authorizeRequests ->
                 authorizeRequests
-                    .requestMatchers("/api/auth/**", "/login", "/register", "/forgot-password", "/css/**", "/js/**", "/style.css", "/h2-console/**").permitAll()
+                    .requestMatchers("/api/auth/**", "/login", "/register", "/forgot-password", "/css/**", "/js/**", "/style.css", "/h2-console/**","/actuator/prometheus").permitAll()
                     .anyRequest().authenticated()
             )
             .formLogin(formLogin ->
