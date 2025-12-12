@@ -6,7 +6,7 @@ services:
     build: .
     container_name: java_backend
     ports:
-      - "9090:9090"
+      - "8080:8080"
     environment:
       # Y-websocket服务地址
       - Y_WEBSOCKET_URL=ws://ywebsocket:1234
@@ -98,10 +98,72 @@ services:
     networks:
       - app-network
 
+  # ELK - Elasticsearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.10
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ELK - Logstash
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.17.10
+    container_name: logstash
+    ports:
+      - "5044:5044"
+      - "9600:9600"
+    volumes:
+      - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./logs:/app/logs:ro
+    networks:
+      - app-network
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  # ELK - Kibana
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.10
+    container_name: kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    networks:
+      - app-network
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:v2.44.0
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - app-network
+    restart: unless-stopped
+
 # 数据卷定义
 volumes:
   postgres_data:
   rabbitmq_data:
+  elasticsearch_data:
+  prometheus_data:
 
 # 网络定义
 networks:

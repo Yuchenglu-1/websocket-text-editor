@@ -32,7 +32,7 @@ COPY --from=builder /app/target/*.jar app.jar
 RUN mkdir -p uploads/avatars
 
 # 应用程序暴露的端口
-EXPOSE 9090
+EXPOSE 8080
 
 # 启动应用程序
 ENTRYPOINT ["java", "-jar", "app.jar"]
