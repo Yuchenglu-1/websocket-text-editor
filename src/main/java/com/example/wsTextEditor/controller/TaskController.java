@@ -3,6 +3,8 @@ package com.example.wsTextEditor.controller;
 import com.example.wsTextEditor.model.Task;
 import com.example.wsTextEditor.service.ActionLogService;
 import com.example.wsTextEditor.service.TaskService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +23,8 @@ import java.util.List;
 @RequestMapping("/api/tasks")
 public class TaskController {
 
+    private static final Logger logger = LoggerFactory.getLogger(TaskController.class);
+
     @Autowired
     private TaskService taskService;
     @Autowired
@@ -33,6 +37,7 @@ public class TaskController {
      */
     @GetMapping
     public List<Task> getAllTasks() {
+        logger.info("Fetching all tasks");
         return taskService.getAllTasks();
     }
 
@@ -44,6 +49,7 @@ public class TaskController {
      */
     @GetMapping("/document/{documentId}")
     public List<Task> getTasksByDocumentId(@PathVariable String documentId) {
+        logger.info("Fetching tasks for document ID: {}", documentId);
         return taskService.getTasksByDocumentUniqueId(documentId);
     }
 
@@ -55,9 +61,13 @@ public class TaskController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<Task> getTaskById(@PathVariable Long id) {
+        logger.info("Fetching task by ID: {}", id);
         return taskService.getTaskById(id)
-                .map(task -> ResponseEntity.ok().body(task))
-                .orElse(ResponseEntity.notFound().build());
+                .map(task -> {
+                    logger.info("Task found with ID: {}", id);
+                    return ResponseEntity.ok().body(task);
+                })
+                .orElse(null);
     }
 
     /**
@@ -69,17 +79,12 @@ public class TaskController {
      */
     @PostMapping
     public ResponseEntity<?> createTask(@RequestBody Task task, @AuthenticationPrincipal UserDetails userDetails) {
-        try {
-            String username = userDetails.getUsername();
-            Task createdTask = taskService.createTask(task, username);
-            return ResponseEntity.ok(createdTask);
-        } catch(IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
-        } catch(IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
+        String username = userDetails.getUsername();
+
+        logger.info("Creating new task by user: {}", username);
+        Task createdTask = taskService.createTask(task, username);
+        logger.info("Task created successfully with ID: {} by user: {}", createdTask.getId(), username);
+        return ResponseEntity.ok(createdTask);
     }
     /**
      * 更新任务状态
@@ -90,17 +95,12 @@ public class TaskController {
      */
     @PutMapping("/{id}/status")
     public ResponseEntity<?> updateTaskStatus(@PathVariable Long id, @RequestBody Task taskDetails, @AuthenticationPrincipal UserDetails userDetails) {
-        try {
-            String username = userDetails.getUsername();
-            Task updatedTask = taskService.updateTaskStatus(id, taskDetails.isCompleted(), username);
-            return ResponseEntity.ok(updatedTask);
-        } catch(IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
-        } catch(IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
+        String username = userDetails.getUsername();
+
+        logger.info("Updating task status for task ID: {} by user: {}", id, username);
+        Task updatedTask = taskService.updateTaskStatus(id, taskDetails.isCompleted(), username);
+        logger.info("Task status updated successfully for task ID: {} by user: {}", id, username);
+        return ResponseEntity.ok(updatedTask);
     }
 
     /**
@@ -112,20 +112,15 @@ public class TaskController {
     @DeleteMapping("/{id}")
     @Transactional(rollbackFor = Exception.class,propagation = Propagation.REQUIRES_NEW)
     public ResponseEntity<?> deleteTask(@PathVariable Long id, @AuthenticationPrincipal UserDetails userDetails) {
-        try {
-            String username = userDetails.getUsername();
-            Task task=taskService.getTaskById(id)
-                    .orElseThrow(() -> new IllegalArgumentException("任务不存在"));
-            String documentId=task.getDocumentId();
-            actionLogService.logAction( "删除任务", "任务ID："+id+"，文档ID："+documentId,documentId);
-            taskService.deleteTask(id, username);
-            return ResponseEntity.ok().build();
-        } catch(IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
-        } catch(IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
+        String username = userDetails.getUsername();
+
+        logger.info("Deleting task ID: {} by user: {}", id, username);
+        Task task=taskService.getTaskById(id)
+                .orElseThrow(() -> new IllegalArgumentException("任务不存在"));
+        String documentId=task.getDocumentId();
+        actionLogService.logAction( "删除任务", "任务ID："+id+"，文档ID："+documentId,documentId);
+        taskService.deleteTask(id, username);
+        logger.info("Task ID: {} deleted successfully by user: {}", id, username);
+        return ResponseEntity.ok().build();
     }
 }

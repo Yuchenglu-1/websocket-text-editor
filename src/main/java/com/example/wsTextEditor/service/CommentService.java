@@ -120,7 +120,7 @@ public class CommentService {
     }
     //发送消息，只有创建评论有消息还有某人点赞了A的评论，那么A会收到消息有人点赞了你的评论
     private void sendCommentNotification(Comment comment, String action) {
-        try {
+
             // 创建消息对象
             com.example.wsTextEditor.pojo.MessageDTO message = new com.example.wsTextEditor.pojo.MessageDTO();
             message.setType("comment");
@@ -131,9 +131,5 @@ public class CommentService {
 
             // 发送到RabbitMQ，由MessageConsumerService处理并广播给WebSocket客户端
             messageProducerService.sendTaskMessage(message);
-        } catch (Exception e) {
-            System.err.println("Failed to send task notification: " + e.getMessage());
-            e.printStackTrace();
-        }
     }
 }

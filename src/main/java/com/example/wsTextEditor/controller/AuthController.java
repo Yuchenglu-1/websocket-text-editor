@@ -2,6 +2,8 @@ package com.example.wsTextEditor.controller;
 
 import com.example.wsTextEditor.model.User;
 import com.example.wsTextEditor.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -26,6 +28,8 @@ import java.util.UUID;
 @RequestMapping("/api/auth")
 public class AuthController {
 
+    private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
+
     @Autowired
     private AuthenticationManager authenticationManager;
 
@@ -43,21 +47,19 @@ public class AuthController {
         String username = loginRequest.get("username"); // 只能通过用户名登录
         String password = loginRequest.get("password");
 
-        try {
-            // 验证用户凭据
-            Authentication authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(username, password)
-            );
-            
-            // 设置认证信息
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-            
-            // 将认证信息存储到session中，确保在后续请求中保持登录状态
-            HttpSession session = request.getSession(true);
-            session.setAttribute("SPRING_SECURITY_CONTEXT", SecurityContextHolder.getContext());
-        } catch (Exception e) {
-            return ResponseEntity.status(401).body("Invalid credentials");
-        }
+        logger.info("User attempting to login: {}", username);
+        // 验证用户凭据
+        Authentication authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(username, password)
+        );
+        
+        // 设置认证信息
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        
+        // 将认证信息存储到session中，确保在后续请求中保持登录状态
+        HttpSession session = request.getSession(true);
+        session.setAttribute("SPRING_SECURITY_CONTEXT", SecurityContextHolder.getContext());
+        logger.info("User logged in successfully: {}", username);
 
         // 登录成功，返回成功消息
         Map<String, String> response = new HashMap<>();
@@ -72,21 +74,22 @@ public class AuthController {
         String email = registerRequest.get("email");
         String phoneNumber = registerRequest.get("phoneNumber");
 
+        logger.info("New user registration attempt: {}", username);
         // 检查用户名是否已存在
         if (userRepository.findByUsername(username).isPresent()) {
-            return ResponseEntity.badRequest().body("Username already exists");
+            logger.warn("Registration failed: username already exists: {}", username);
+            throw new IllegalArgumentException("Username already exists");
         }
-
         // 检查邮箱是否已存在
         if (email != null && !email.isEmpty() && userRepository.findByEmail(email) != null) {
-            return ResponseEntity.badRequest().body("Email already exists");
+            logger.warn("Registration failed: email already exists: {}", email);
+            throw new IllegalArgumentException("Email already exists");
         }
-
         // 检查手机号是否已存在
         if (phoneNumber != null && !phoneNumber.isEmpty() && userRepository.findByPhoneNumber(phoneNumber) != null) {
-            return ResponseEntity.badRequest().body("Phone number already exists");
+            logger.warn("Registration failed: phone number already exists: {}", phoneNumber);
+            throw new IllegalArgumentException("Phone number already exists");
         }
-
         // 创建新用户
         User user = new User();
         user.setUsername(username);
@@ -94,6 +97,7 @@ public class AuthController {
         user.setEmail(email);
         user.setPhoneNumber(phoneNumber);
         userRepository.save(user);
+        logger.info("User registered successfully: {}", username);
 
         // 返回成功消息
         Map<String, String> response = new HashMap<>();
@@ -107,15 +111,18 @@ public class AuthController {
         String email = request.get("email");
         String newPassword = request.get("newPassword");
         
+        logger.info("Password reset attempt via email: {}", email);
         // 检查邮箱是否存在
         User user = userRepository.findByEmail(email);
         if (user == null) {
-            return ResponseEntity.badRequest().body("Email not found");
+            logger.warn("Password reset failed: email not found: {}", email);
+            throw new IllegalArgumentException("Email not found");
         }
         
         // 重置密码
         user.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
+        logger.info("Password reset successfully for user with email: {}", email);
         
         Map<String, String> response = new HashMap<>();
         response.put("message", "Password reset successfully via email");
@@ -128,15 +135,18 @@ public class AuthController {
         String phoneNumber = request.get("phoneNumber");
         String newPassword = request.get("newPassword");
         
+        logger.info("Password reset attempt via phone: {}", phoneNumber);
         // 检查手机号是否存在
         User user = userRepository.findByPhoneNumber(phoneNumber);
         if (user == null) {
-            return ResponseEntity.badRequest().body("Phone number not found");
+            logger.warn("Password reset failed: phone number not found: {}", phoneNumber);
+            throw new IllegalArgumentException("Phone number not found");
         }
         
         // 重置密码
         user.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
+        logger.info("Password reset successfully for user with phone: {}", phoneNumber);
         
         Map<String, String> response = new HashMap<>();
         response.put("message", "Password reset successfully via phone");
@@ -155,6 +165,7 @@ public class AuthController {
             session.invalidate();
         }
         
+        logger.info("User logged out successfully");
         // 返回成功消息
         Map<String, String> responseBody = new HashMap<>();
         responseBody.put("message", "Logout successful");

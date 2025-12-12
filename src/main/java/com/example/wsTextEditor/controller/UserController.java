@@ -3,6 +3,8 @@ package com.example.wsTextEditor.controller;
 import com.example.wsTextEditor.model.User;
 import com.example.wsTextEditor.repository.UserRepository;
 import com.example.wsTextEditor.service.WebSocketNotificationService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -17,6 +19,8 @@ import java.util.*;
 @Controller
 public class UserController {
 
+    private static final Logger logger = LoggerFactory.getLogger(UserController.class);
+
     @Autowired
     private UserRepository userRepository;
     @Autowired
@@ -25,16 +29,19 @@ public class UserController {
     //进行页面定位
     @GetMapping("/login")
     public String login() {
+        logger.info("Accessing login page");
         return "login";
     }
 
     @GetMapping("/register")
     public String register() {
+        logger.info("Accessing register page");
         return "register";
     }
     
     @GetMapping("/forgot-password")
     public String forgotPassword() {
+        logger.info("Accessing forgot password page");
         return "forgot-password";
     }
     
@@ -44,6 +51,7 @@ public class UserController {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
             String username = authentication.getName();
+            logger.info("Accessing profile page for user: {}", username);
             User currentUser = userRepository.findByUsername(username).orElse(null);
             if (currentUser != null) {
                 model.addAttribute("currentUser", currentUser);
@@ -58,6 +66,7 @@ public class UserController {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
             String username = authentication.getName();
+            logger.info("Accessing online users page for user: {}", username);
             userRepository.findByUsername(username).ifPresent(currentUser -> model.addAttribute("currentUser", currentUser));
         }
         return "online-users";
@@ -66,32 +75,30 @@ public class UserController {
     @ResponseBody
     @GetMapping("/api/users/online")
     public ResponseEntity<?> getOnlineUsers() {
-        try {
-            // 获取在线用户ID列表
-            Set<String> onlineUserIds = webSocketNotificationService.getOnlineUsers();
+        logger.info("Fetching online users list");
+        // 获取在线用户ID列表
+        Set<String> onlineUserIds = webSocketNotificationService.getOnlineUsers();
 
-            // 根据ID获取用户详细信息
-            List<Map<String, Object>> onlineUsers = new ArrayList<>();
-            for (String userId : onlineUserIds) {
-                // 根据用户名查找用户（这里存储的是用户名而不是ID）
-                Optional<User> userOpt = userRepository.findByUsername(userId);
-                if (userOpt.isPresent()) {
-                    User user = userOpt.get();
-                    Map<String, Object> userInfo = new HashMap<>();
-                    userInfo.put("id", user.getId());
-                    userInfo.put("username", user.getUsername());
-                    userInfo.put("email", user.getEmail());
-                    userInfo.put("phoneNumber", user.getPhoneNumber());
-                    userInfo.put("avatarUrl", user.getAvatarUrl());
-                    userInfo.put("invitationUuid", user.getInvitationUuid());
-                    onlineUsers.add(userInfo);
-                }
+        // 根据ID获取用户详细信息
+        List<Map<String, Object>> onlineUsers = new ArrayList<>();
+        for (String userId : onlineUserIds) {
+            // 根据用户名查找用户（这里存储的是用户名而不是ID）
+            Optional<User> userOpt = userRepository.findByUsername(userId);
+            if (userOpt.isPresent()) {
+                User user = userOpt.get();
+                Map<String, Object> userInfo = new HashMap<>();
+                userInfo.put("id", user.getId());
+                userInfo.put("username", user.getUsername());
+                userInfo.put("email", user.getEmail());
+                userInfo.put("phoneNumber", user.getPhoneNumber());
+                userInfo.put("avatarUrl", user.getAvatarUrl());
+                userInfo.put("invitationUuid", user.getInvitationUuid());
+                onlineUsers.add(userInfo);
             }
-
-            return ResponseEntity.ok(onlineUsers);
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body("Error fetching online users: " + e.getMessage());
         }
+        logger.info("Found {} online users", onlineUsers.size());
+
+        return ResponseEntity.ok(onlineUsers);
     }
 
 

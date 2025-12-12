@@ -7,6 +7,8 @@ import com.example.wsTextEditor.repository.DocumentCollaboratorRepository;
 import com.example.wsTextEditor.repository.DocumentRepository;
 import com.example.wsTextEditor.repository.UserRepository;
 import com.example.wsTextEditor.service.DocumentPermissionService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +18,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.file.AccessDeniedException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -30,6 +33,8 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/documents")
 public class DocumentsController {
+    private static final Logger logger = LoggerFactory.getLogger(DocumentsController.class);
+    
     /** 文档仓库，用于数据库操作 */
     @Autowired
     private DocumentRepository documentRepository;
@@ -61,34 +66,33 @@ public class DocumentsController {
                                                @RequestParam String content,
                                                @RequestParam(required = false) String language,
                                                @RequestParam(required = false) String title,
-                                               @AuthenticationPrincipal UserDetails userDetails) {
-        try {
-            // 查找文档
-            Document document = documentRepository.findByUniqueId(documentId)
-                    .orElseThrow(() -> new IllegalArgumentException("Invalid document ID:" + documentId));
+                                               @AuthenticationPrincipal UserDetails userDetails) throws Exception{
 
-            // 验证用户权限（只有文档所有者和编辑者才能保存）
-            User currentUser = userRepository.findByUsername(userDetails.getUsername()).orElseThrow();
-            if (!documentPermissionService.canEditDocument(document, currentUser)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("You don't have permission to save this document.");
-            }
+        logger.info("Saving document with ID:{},user:{}", documentId, userDetails.getUsername());
+        // 查找文档
+        Document document = documentRepository.findByUniqueId(documentId)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid document ID:" + documentId));
 
-            // 更新文档内容
-            document.setContent(content);
-            if (language != null && !language.isEmpty()) {
-                document.setLanguage(language);
-            }
-            if (title != null && !title.isEmpty()) {
-                document.setTitle(title);
-            }
-
-            // 保存到数据库
-            documentRepository.save(document);
-
-            return ResponseEntity.ok("Document saved successfully!");
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to save document: " + e.getMessage());
+        // 验证用户权限（只有文档所有者和编辑者才能保存）
+        // 2. 查找用户
+        User currentUser = userRepository.findByUsername(userDetails.getUsername())
+                .orElseThrow(() -> new IllegalStateException("User not found"));
+        if (!documentPermissionService.canEditDocument(document, currentUser)) {
+            logger.warn("User {} does not have permission to save document {}", userDetails.getUsername(), documentId);
+            throw new IllegalAccessException("You don't have permission to save this document.");
         }
+        // 更新文档内容
+        document.setContent(content);
+        if (language != null && !language.isEmpty()) {
+            document.setLanguage(language);
+        }
+        if (title != null && !title.isEmpty()) {
+            document.setTitle(title);
+        }
+        // 保存到数据库
+        documentRepository.save(document);
+        logger.info("Document {} saved successfully by user {}", documentId, userDetails.getUsername());
+        return ResponseEntity.ok("Document saved successfully!");
     }
     /**
      * 删除文档
@@ -100,38 +104,38 @@ public class DocumentsController {
     @Transactional(rollbackFor = Exception.class,propagation = Propagation.REQUIRES_NEW)
     @DeleteMapping("/delete/{docId}")
     public ResponseEntity<String> deleteDocument(@PathVariable String docId,
-                                                 @AuthenticationPrincipal UserDetails userDetails) {
-        try { //获取当前用户，查看是否有删除权限
+                                                 @AuthenticationPrincipal UserDetails userDetails)throws Exception {
+
+            logger.info("Deleting document with ID: {}", docId);
+            //获取当前用户，查看是否有删除权限
              User user=userRepository.findByUsername(userDetails.getUsername())
                      .orElseThrow(()->new IllegalStateException("no user exist"));
              //通过文档id查找文档
             Document document =documentRepository.findByUniqueId(docId)
                     .orElseThrow(()->new IllegalArgumentException("Invalid document ID;"));
              if(documentPermissionService.getUserPermissionLevel(document,user)== DocumentCollaborator.PermissionLevel.OWNER)
-             {   documentCollaboratorRepository.deleteByDocumentId(document.getId());
+             {   
+                 logger.info("User {} is owner, deleting document collaborators", userDetails.getUsername());
+                 documentCollaboratorRepository.deleteByDocumentId(document.getId());
+                 logger.info("Deleting document {}", docId);
                  documentRepository.delete(document);
              }
              else
              {
-                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body("You don't have permission to delete this document.");
+                 logger.warn("User {} does not have permission to delete document {}", userDetails.getUsername(), docId);
+                throw new IllegalAccessException("You don't have permission to delete this document.");
              }
-        }catch(IllegalStateException e){
-           return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Failed to delete document: " + e.getMessage());
-        }
-         catch(IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Failed to delete document: " + e.getMessage());
-         }
-         catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to delete document: " + e.getMessage());
-        }
+        logger.info("Document {} deleted successfully by user {}", docId, userDetails.getUsername());
         return ResponseEntity.ok("Document deleted successfully!");
     }
     @PostMapping("/update-title/{docId}")
     @Transactional(rollbackFor = Exception.class,propagation = Propagation.REQUIRES_NEW)
     public ResponseEntity<String> updateDocumentTitle(@PathVariable String docId,
                                                      @RequestBody Map<String,String> tit,
-                                                     @AuthenticationPrincipal UserDetails userDetails) {
-        try { //获取当前用户，查看是否有更新权限
+                                                     @AuthenticationPrincipal UserDetails userDetails){
+
+            logger.info("Updating title for document with ID: {}", docId);
+            //获取当前用户，查看是否有更新权限
             User user=userRepository.findByUsername(userDetails.getUsername())
                     .orElseThrow(()->new IllegalStateException("no user exist"));
             //通过文档id修改文档
@@ -140,15 +144,7 @@ public class DocumentsController {
                     .orElseThrow(()->new IllegalArgumentException("Invalid document ID;"));
             document.setTitle(title);
             documentRepository.save(document);
-        }catch(IllegalStateException e){
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(e.getMessage());
-        }
-        catch(IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
-        }
-         catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to update document title: " + e.getMessage());
-        }
+            logger.info("Document {} title updated successfully by user {}", docId, userDetails.getUsername());
         return ResponseEntity.ok("Document title updated successfully!");
     }
     /**
@@ -163,8 +159,9 @@ public class DocumentsController {
     @Transactional(rollbackFor = Exception.class,propagation = Propagation.REQUIRED)
     public ResponseEntity<String> addTagsToDocument(@PathVariable String docId,
                                                     @RequestBody Map<String, String> payload,
-                                                    @AuthenticationPrincipal UserDetails userDetails) {
-        try {
+                                                    @AuthenticationPrincipal UserDetails userDetails)throws  Exception{
+
+            logger.info("Adding tags to document with ID: {}", docId);
             // 获取当前用户
             User user = userRepository.findByUsername(userDetails.getUsername())
                     .orElseThrow(() -> new IllegalStateException("User not found"));
@@ -175,22 +172,19 @@ public class DocumentsController {
 
             // 检查用户是否有权限编辑文档
             if (!documentPermissionService.canEditDocument(document, user)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body("You don't have permission to add tags to this document.");
+                logger.warn("User {} does not have permission to add tags to document {}", userDetails.getUsername(), docId);
+                throw new IllegalAccessException("You don't have permission to add tags to this document.");
             }
-
             // 获取请求中的标签
             String tagsString = payload.get("tags");
             if (tagsString == null || tagsString.trim().isEmpty()) {
-                return ResponseEntity.badRequest().body("Tags cannot be empty.");
+                logger.warn("Empty tags provided for document {}", docId);
+                throw new IllegalArgumentException("Tags cannot be empty.");
             }
-
             // 解析标签（支持逗号分隔的多个标签）
             String[] newTags = tagsString.split(",");
-
             // 获取文档现有的标签
             List<String> existingTags = document.getTagList();
-
             // 合并现有标签和新标签，去重
             Set<String> tagSet = new HashSet<>(existingTags);
             for (String tag : newTags) {
@@ -199,25 +193,18 @@ public class DocumentsController {
                     tagSet.add(trimmedTag);
                 }
             }
-
             // 更新文档标签
             document.setTagList(new ArrayList<>(tagSet));
             documentRepository.save(document);
-
+            logger.info("Tags added successfully to document {} by user {}", docId, userDetails.getUsername());
             return ResponseEntity.ok("Tags added successfully!");
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Failed to add tags: " + e.getMessage());
-        }
     }
     @GetMapping("/tags")
     public ResponseEntity<?> getTags(@AuthenticationPrincipal UserDetails userDetails)
-    {   Set<String> tags = new HashSet<>();
-        try {
+    {   
+        Set<String> tags = new HashSet<>();
+
+            logger.info("Fetching tags for user: {}", userDetails.getUsername());
             User user = userRepository.findByUsername(userDetails.getUsername())
                     .orElseThrow(() -> new IllegalStateException("User not found"));
             //读取自己有权限访问的文档列表的标签
@@ -226,13 +213,7 @@ public class DocumentsController {
                     .map(DocumentCollaborator::getDocument)
                     .toList();
             documents.forEach(document -> tags.addAll(document.getTagList()));
-
-        }catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null);
-        }
-        catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to get tags: " + e.getMessage());
-        }
+            logger.info("Found {} tags for user {}", tags.size(), userDetails.getUsername());
         return ResponseEntity.ok(tags);
     }
     /**
@@ -243,17 +224,14 @@ public class DocumentsController {
      */
     @GetMapping("/tags/{tag}")
     public ResponseEntity<?> getDocumentsByTag(@PathVariable String tag,@AuthenticationPrincipal UserDetails userDetails)
-    {   List<Document> documents = new ArrayList<>();
-        try {
+    {   
+        List<Document> documents = new ArrayList<>();
+
+            logger.info("Fetching documents by tag: {} for user: {}", tag, userDetails.getUsername());
             User user =userRepository.findByUsername(userDetails.getUsername())
                     .orElseThrow(()->new IllegalStateException("User not found"));
            documents = documentRepository.findByTags(tag);
-        }catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null);
-        }
-        catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to get documents by tag: " + e.getMessage());
-        }
+           logger.info("Found {} documents with tag {} for user {}", documents.size(), tag, userDetails.getUsername());
         return ResponseEntity.ok(documents);
     }
 }

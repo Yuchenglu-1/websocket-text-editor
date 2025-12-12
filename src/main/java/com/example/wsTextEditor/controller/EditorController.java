@@ -11,6 +11,8 @@ import com.example.wsTextEditor.repository.UserRepository;
 import com.example.wsTextEditor.service.DocumentPermissionService;
 import com.example.wsTextEditor.model.DocumentCollaborator.PermissionLevel;
 import com.example.wsTextEditor.repository.ActionLogRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -31,6 +33,8 @@ import java.util.stream.Collectors;
  */
 @Controller
 public class EditorController {
+
+    private static final Logger logger = LoggerFactory.getLogger(EditorController.class);
 
     /** 文档仓库，用于数据库操作 */
     private final DocumentRepository documentRepository;
@@ -80,8 +84,10 @@ public class EditorController {
                           @RequestParam(value = "loginSuccess", required = false) String loginSuccess,
                           @RequestParam(value = "tags", required = false) String tagsParam) {
         if (userDetails == null) {
+            logger.info("User not authenticated, redirecting to login");
             return "redirect:/login";
         }
+        logger.info("Loading dashboard for user: {}", userDetails.getUsername());
         //获取用户信息，并且获得用户参与的文档，通过流操作
         User user = userRepository.findByUsername(userDetails.getUsername()).orElseThrow();
         
@@ -115,6 +121,7 @@ public class EditorController {
         
         // 添加标签参数到模型中，用于前端显示
         model.addAttribute("tagsFilter", tagsParam);
+        logger.info("Loaded {} documents for user: {}", documents.size(), userDetails.getUsername());
         
         return "dashboard";
     }
@@ -127,6 +134,7 @@ public class EditorController {
      */
     @PostMapping("/documents/create")
     public String createDocument(@AuthenticationPrincipal UserDetails userDetails, RedirectAttributes redirectAttributes) {
+        logger.info("Creating new document for user: {}", userDetails.getUsername());
         User user = userRepository.findByUsername(userDetails.getUsername()).orElseThrow();
         Document doc = new Document();
         doc.setOwner(user);
@@ -140,6 +148,7 @@ public class EditorController {
         
         // 添加成功消息
         redirectAttributes.addFlashAttribute("message", "Document created successfully!");
+        logger.info("Document created successfully with ID: {} for user: {}", doc.getUniqueId(), userDetails.getUsername());
         
         // 返回原页面
         return "redirect:/";
@@ -154,10 +163,13 @@ public class EditorController {
      */
     @PostMapping("/documents/join")
     public String joinDocument(@RequestParam String documentId, @AuthenticationPrincipal UserDetails userDetails, RedirectAttributes redirectAttributes) {
+        logger.info("User {} attempting to join document: {}", userDetails.getUsername(), documentId);
         // Check if document exists
         if (documentRepository.findByUniqueId(documentId).isPresent()) {
+            logger.info("Document {} found, redirecting user {} to editor", documentId, userDetails.getUsername());
             return "redirect:/editor/" + documentId;
         } else {
+            logger.warn("Document {} not found for user {}", documentId, userDetails.getUsername());
             redirectAttributes.addFlashAttribute("error", "Document not found. Please check the document ID.");
             return "redirect:/";
         }
@@ -173,10 +185,10 @@ public class EditorController {
      */
     @GetMapping("/editor/{documentId}")
     public String editor(@PathVariable String documentId, Model model, @AuthenticationPrincipal UserDetails userDetails, RedirectAttributes redirectAttributes) {
-        System.out.println("EditorController: userDetails=" + userDetails); // 调试信息
+        logger.debug("EditorController: userDetails={}", userDetails);
         
         if (userDetails == null) {
-            System.out.println("EditorController: userDetails is null, redirecting to login"); // 调试信息
+            logger.info("EditorController: userDetails is null, redirecting to login");
             return "redirect:/login";
         }
 
@@ -184,17 +196,19 @@ public class EditorController {
         Optional<Document> documentOpt = documentRepository.findByUniqueId(documentId);
         if (documentOpt.isEmpty()) {
             // 如果文档不存在，重定向到主页并显示错误消息
+            logger.warn("Document not found: {}", documentId);
             redirectAttributes.addFlashAttribute("error", "Document not found.");
             return "redirect:/";
         }
         
         Document document = documentOpt.get();
         User user = userRepository.findByUsername(userDetails.getUsername()).orElseThrow();
-        System.out.println("EditorController: user=" + user); // 调试信息
+        logger.debug("EditorController: user={}", user);
         
         // 检查用户是否有权限查看文档
         if (!documentPermissionService.canViewDocument(document, user)) {
             // 如果用户没有权限，重定向到主页并显示错误消息
+            logger.warn("User {} does not have permission to access document {}", userDetails.getUsername(), documentId);
             redirectAttributes.addFlashAttribute("error", "You don't have permission to access this document.");
             return "redirect:/";
         }
@@ -207,6 +221,7 @@ public class EditorController {
         PermissionLevel permissionLevel = documentPermissionService.getUserPermissionLevel(document, user);
         model.addAttribute("userPermission", permissionLevel);
         model.addAttribute("canEdit", documentPermissionService.canEditDocument(document, user));
+        logger.info("User {} accessing document {} with permission level: {}", userDetails.getUsername(), documentId, permissionLevel);
         
         return "editor";
     }
@@ -219,27 +234,22 @@ public class EditorController {
      */
     @GetMapping("/logs")
     public String viewOperationLogs(Model model, @AuthenticationPrincipal UserDetails userDetails) {
-        try {
-            if (userDetails == null) {
-                return "redirect:/login";
-            }
-            
-            User user = userRepository.findByUsername(userDetails.getUsername())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-            
-            List<ActionLog> logs = actionLogRepository.findByUsernameOrderByCreatedAtDesc(user.getUsername());
-            
-            model.addAttribute("currentUser", user);
-            model.addAttribute("logs", logs);
-            
-            return "logs";
-        } catch (Exception e) {
-            // Log the exception for debugging
-            e.printStackTrace();
-            // Add an error message to the model and return to dashboard
-            model.addAttribute("error", "Unable to load operation logs at this time.");
-            return "redirect:/";
+        if (userDetails == null) {
+            logger.info("User not authenticated, redirecting to login");
+            return "redirect:/login";
         }
+        
+        logger.info("Loading operation logs for user: {}", userDetails.getUsername());
+        User user = userRepository.findByUsername(userDetails.getUsername())
+            .orElseThrow(() -> new IllegalStateException("User not found"));
+        
+        List<ActionLog> logs = actionLogRepository.findByUsernameOrderByCreatedAtDesc(user.getUsername());
+        
+        model.addAttribute("currentUser", user);
+        model.addAttribute("logs", logs);
+        logger.info("Loaded {} operation logs for user: {}", logs.size(), userDetails.getUsername());
+        
+        return "logs";
     }
 
     /**
@@ -248,6 +258,7 @@ public class EditorController {
      */
     @GetMapping("/tasks")
     public String showTasksPage() {
+        logger.info("Accessing tasks page");
         return "tasks"; // 返回tasks.html模板
     }
 

@@ -181,16 +181,21 @@
         </div>
     </div>
 
-    <!-- 编辑器容器 -->
-    <div id="editor-container" th:class="${canEdit ? '' : 'read-only'}"></div>
-    
-    <!-- 添加数据属性来传递文档内容 -->
-    <div id="document-context" 
-         th:data-content="${document.content}" 
+    <div id="editor-wrapper" style="position: relative; width: 100%; height: calc(100vh - 60px);">
+      <!-- Monaco编辑器容器 -->
+        <div id="editor-container"
+             th:class="${canEdit ? '' : 'read-only'}"
+             style="width: 100%; height: 100%;"></div>
+       <!--光标覆盖层 -->
+        <div id="cursor-overlay"
+             style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; z-index: 10;">
+        </div>
+
+    </div>
+      <!-- 文档内容容器 -->
+    <div id="document-context"
+         th:data-content="${document.content}"
          style="display: none;"></div>
-    
-    <!-- 光标覆盖层，用于显示其他用户的光标位置 -->
-    <div id="cursor-overlay"></div>
     
     <!-- Toast消息容器 -->
     <div id="toast-container"></div>
@@ -198,6 +203,14 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Monaco Editor -->
     <script src="https://cdn.jsdelivr.net/npm/monaco-editor@latest/min/vs/loader.js"></script>
+    <script type="importmap">
+        {
+          "imports": {
+            "yjs": "https://esm.sh/yjs@13.6.18",
+            "y-websocket": "https://esm.sh/y-websocket@1.5.4?deps=yjs@13.6.18"
+          }
+        }
+    </script>
     <script type="module">
         /*<![CDATA[*/
         const ywsUrl = /*[[${ywsUrl}]]*/ 'ws://localhost:1234';
@@ -219,9 +232,9 @@
         console.log('Document content from data attribute:', documentContent);
         /*]]>*/
 
-        import * as Y from 'https://esm.sh/yjs@14.0.0-6';
-        import { WebsocketProvider } from 'https://esm.sh/@y/websocket@4.0.0-1?alias=yjs:https://esm.sh/yjs@14.0.0-6';
-
+        // 直接引用 Import Map 中定义的名称
+        import * as Y from 'yjs';
+        import { WebsocketProvider } from 'y-websocket';
         // 添加SockJS和STOMP库用于WebSocket通知
         let notificationCount = 0;
 
@@ -619,23 +632,6 @@
                 }
             });
 
-            // 如果我们有数据库内容且YText为空，则用数据库内容初始化Y.js文档
-            // 这个逻辑需要在observe事件绑定之后执行，以确保内容正确同步
-            // 确保在Y.js同步完成后再设置初始内容
-            setTimeout(() => {
-                // 只有当Y.js文本为空且我们有数据库内容时才设置初始内容
-                if (ytext.toString().trim() === '' && documentContent && documentContent.trim() !== '') {
-                    console.log('Initializing editor with database content after timeout:', documentContent);
-                    ytext.insert(0, documentContent);
-                }
-                // 如果Y.js已经有内容，确保Monaco编辑器也同步
-                else if (ytext.toString().trim() !== '' && monacoEditor.getValue().trim() === '') {
-                    console.log('Syncing Monaco editor with Y.js content after timeout');
-                    isUpdatingFromY = true;
-                    monacoEditor.setValue(ytext.toString());
-                    isUpdatingFromY = false;
-                }
-            }, 500);
 
             setupCursorTracking();
             

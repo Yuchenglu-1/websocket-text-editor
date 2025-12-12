@@ -1,16 +1,28 @@
-<!-- logback-spring.xml -->
+<?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <include resource="org/springframework/boot/logging/logback/base.xml"/>
 
-    <!-- 定义一个输出到控制台的 Appender，使用 Logstash 的 JSON 编码器 -->
-    <appender name="STDOUT_JSON" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+    <appender name="LOGSTASH" class="net.logstash.logback.appender.LogstashTcpSocketAppender">
+        <destination>192.168.100.129:5000</destination>
+        <!-- 仅记录ERROR及以上级别的日志 -->
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdc>true</includeMdc>
+
+            <customFields>{"app_name":"my-backend-service"}</customFields>
+        </encoder>
     </appender>
 
-    <!-- root logger 的配置 -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <!-- 修改时间戳格式，使用北京时间 -->
+            <pattern>%d{yyyy-MM-dd HH:mm:ss,Asia/Shanghai} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
     <root level="INFO">
-        <!-- 将我们定义的 JSON Appender 添加到 root logger -->
-        <!-- 这会让应用的所有日志都以 JSON 格式输出到控制台 -->
-        <appender-ref ref="STDOUT_JSON"/>
+        <appender-ref ref="LOGSTASH" />
+        <appender-ref ref="CONSOLE" />
     </root>
 </configuration>
